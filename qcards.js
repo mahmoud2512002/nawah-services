@@ -1,8 +1,8 @@
 /* ══════════════════════════════════════════════════════════════
    كارنيهات كوين سيرفيس — صفحة جديدة في لوحة الإدارة
 
-   • نفس فكرة صفحة الكارنيهات القديمة ونفس تعليمات الضهر،
-     بس باللوجو واسم كوين سيرفيس. الوظيفة تلقائي من القسم أو بتتكتب
+   • نفس فكرة صفحة الكارنيهات القديمة، بس باللوجو واسم كوين سيرفيس
+     وتعليمات ضهر مناسبة للأمن والإدارة. الوظايف: فرد أمن، مشرف، مدير، نائب مدير + «أخرى». الوظيفة على الكارنيه تلقائي أو بتتكتب
      بإيدك (وتتحفظ في قائمة تختار منها بعد كده).
    • البيانات على جهاز الإدارة بس (localStorage) — مبتترفعش للسيرفر،
      ماعدا رقم الكارنيه قصاد الفني المربوط (زي الصفحة القديمة)
@@ -17,8 +17,25 @@ if (typeof VIEWS === 'undefined' || typeof go !== 'function' || typeof store ===
 const LOGO = 'queen-logo.png';
 const K = { cards: 'qcards', set: 'qcardsSet', jobs: 'qcardsJobs', depts: 'qcardsDepts' };
 
-/* نفس تعليمات ضهر الكارنيه القديم بالحرف */
+/* تعليمات ضهر كارنيه كوين — للأمن والإشراف والإدارة */
 const DEFAULT_INS = [
+  'تُعلَّق البطاقة في مكان ظاهر طوال فترة العمل، وتُبرَز عند الطلب.',
+  'البطاقة شخصية، ولا يجوز إعارتها أو استخدامها في غير أغراض العمل.',
+  'يلتزم حاملها بتعليمات الإدارة ومواعيد العمل والزي الرسمي.',
+  'البطاقة ملك الشركة، وتُسلَّم للإدارة عند انتهاء الخدمة.',
+  'عند فقدها يُبلَّغ المشرف أو الإدارة فوراً.'
+];
+/* تعليمات ضهر كارنيه المدير ونائب المدير */
+const MGMT_ROLES = ['manager', 'deputy'];
+const DEFAULT_INS_MGMT = [
+  'حامل البطاقة من الإدارة العليا للشركة، ومخوَّل بالإشراف على جميع العاملين والمواقع.',
+  'له حق دخول المواقع ومراجعة السجلات والتقارير في أي وقت.',
+  'تُبرَز عند التعامل مع الجهات الرسمية أو العملاء بصفته ممثلاً عن الشركة.',
+  'البطاقة شخصية ولا يجوز استخدامها في غير أغراض العمل، وتُسلَّم عند ترك المنصب.',
+  'عند فقدها يُبلَّغ مجلس إدارة الشركة فوراً.'
+];
+/* تعليمات النسخة الأولى (بتاعة الصيانة) — لو لسه متخزنة زي ما هي تتبدّل بالجديدة */
+const OLD_INS = [
   'تُبرَز للساكن قبل دخول أي وحدة سكنية.',
   'لا يبدأ العمل إلا بأمر شغل معتمد.',
   'البطاقة شخصية وملك الشركة، ولا يجوز التنازل عنها.',
@@ -31,20 +48,22 @@ const DEFAULT_SET = {
   fullName: 'شركة كوين سيرفيس للخدمات المتكاملة',
   insTitle: 'تعليمات',
   instructions: DEFAULT_INS.slice(),
+  instructionsMgmt: DEFAULT_INS_MGMT.slice(),
   contact: ''
 };
-const DEFAULT_JOBS = ['فني سباكة', 'فني كهرباء', 'فني تكييف', 'نجار', 'فني صرف صحي', 'عامل نظافة', 'مشرف صيانة', 'مساعد فني'];
+const DEFAULT_JOBS = ['فرد أمن', 'مشرف', 'مدير', 'نائب مدير'];
 
 let cards = store.get(K.cards, []);
 let S = Object.assign({}, DEFAULT_SET, store.get(K.set, {}));
-if (!Array.isArray(S.instructions)) S.instructions = DEFAULT_INS.slice();
+if (!Array.isArray(S.instructions) || S.instructions.join('\n') === OLD_INS.join('\n')) S.instructions = DEFAULT_INS.slice();
+if (!Array.isArray(S.instructionsMgmt)) S.instructionsMgmt = DEFAULT_INS_MGMT.slice();
 let jobs = store.get(K.jobs, DEFAULT_JOBS.slice());
 if (!Array.isArray(cards)) cards = [];
 if (!Array.isArray(jobs)) jobs = DEFAULT_JOBS.slice();
 /* أقسام بتضيفها من «أخرى» — للكارنيهات بس، مش بتظهر للسكان في طلب الصيانة */
 let custom = store.get(K.depts, []);
 if (!Array.isArray(custom)) custom = [];
-/* الوظيفة: تلقائي من القسم أو بتتكتب بالإيد — آخر اختيار بيتفضل */
+/* الوظيفة على الكارنيه: تلقائي أو بتتكتب بالإيد — آخر اختيار بيتفضل */
 if (typeof S.jobAuto !== 'boolean') S.jobAuto = true;
 
 const selected = new Set();
@@ -58,34 +77,32 @@ const byId = (id) => cards.find((c) => c.id === id) || null;
 const fmtD = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? m[3] + '/' + m[2] + '/' + m[1] : (iso || ''); };
 const saveCards = () => store.set(K.cards, cards);
 
-/* الأقسام والألوان من الموقع نفسه — أي قسم تضيفه الإدارة بيظهر هنا */
-const siteDepts = () => (typeof cardDepts === 'function' ? cardDepts() : (CFG.services || []));
+/* وظايف كوين سيرفيس الثابتة — كل وظيفة ليها لون وحرف في رقم الكارنيه.
+   «أخرى» بتفتح خانة تكتب فيها وظيفة جديدة وتتحفظ معاهم. */
+const ROLES = [
+  { id: 'guard',   name: 'فرد أمن',   code: 'G', color: { ink: '#C0304A', deep: '#761628', tint: '#FBE4E8' } },
+  { id: 'super',   name: 'مشرف',      code: 'S', color: { ink: '#1E2A72', deep: '#0E1545', tint: '#E6E9F8' } },
+  { id: 'manager', name: 'مدير',      code: 'M', color: { ink: '#16895C', deep: '#0A5436', tint: '#DDF4E9' } },
+  { id: 'deputy',  name: 'نائب مدير', code: 'N', color: { ink: '#0E8A9A', deep: '#06525C', tint: '#DDF2F5' } },
+  { id: 'other',   name: 'أخرى',      code: 'X', color: { ink: '#4A5578', deep: '#262D4A', tint: '#E9ECF4' } }
+];
+const siteDepts = () => ROLES;
 const depts = () => siteDepts().concat(custom);
 const customOf = (id) => custom.find((d) => d.id === id) || null;
 const deptOf = (id) => depts().find((x) => x.id === id) || depts()[0] || { id: 'other', name: 'أخرى' };
 const deptName = (id) => { const d = deptOf(id); return d.name || ''; };
 function deptCol(id) {
-  const cu = customOf(id);
-  if (cu && cu.color) return { c1: cu.color.ink, c2: cu.color.deep, tint: cu.color.tint };
-  if (typeof deptColor === 'function') { const k = deptColor(id); return { c1: k.ink, c2: k.deep, tint: k.tint }; }
-  return { c1: '#3F2E8C', c2: '#1C1250', tint: '#ECE6FA' };
+  const d = depts().find((x) => x.id === id);
+  const k = (d && d.color) || ROLES[ROLES.length - 1].color;
+  return { c1: k.ink, c2: k.deep, tint: k.tint };
 }
 function codeOf(id) {
-  const cu = customOf(id);
-  if (cu && cu.code) return cu.code;
-  return typeof deptCode === 'function' ? deptCode(id) : 'X';
+  const d = depts().find((x) => x.id === id);
+  return (d && d.code) || 'X';
 }
-/* الوظيفة التلقائية حسب القسم */
-const AUTO_JOB = {
-  plumb: 'فني سباكة', elec: 'فني كهرباء', ac: 'فني تكييف', carp: 'نجار', sewer: 'فني صرف صحي',
-  clean: 'عامل نظافة', admin: 'إداري', super: 'مشرف فني', security: 'فرد أمن', other: 'فني'
-};
+/* الوظيفة التلقائية = اسم الوظيفة المختارة (و«أخرى» من غير اسم بتفضل فاضية) */
 function autoJob(id) {
-  if (AUTO_JOB[id]) return AUTO_JOB[id];
-  const n = String(deptName(id) || '').trim();
-  if (!n) return 'فني';
-  if (/^(فني|عامل|مشرف|موظف|فرد|سائق|مهندس|مساعد|إداري)/.test(n)) return n;
-  return 'فني ' + n.replace(/^ال(?=\S{3,})/, '');      // الحدائق ← فني حدائق
+  return id === 'other' ? '' : String(deptName(id) || '').trim();
 }
 function syncJob() {
   if (!draft || !draft.jobAuto) return;
@@ -93,7 +110,7 @@ function syncJob() {
   const j = document.getElementById('qcJob');
   if (j) j.value = draft.job;
 }
-/* القسم الجديد بياخد حرف فاضي لرقم الكارنيه ولون مش مستخدم */
+/* الوظيفة الجديدة بتاخد حرف فاضي لرقم الكارنيه ولون مش مستخدم */
 const EXTRA_COLORS = [
   { ink: '#6E7F1F', deep: '#414C0E', tint: '#F0F3DC' },
   { ink: '#D2552E', deep: '#7E2D14', tint: '#FDE9E1' },
@@ -126,8 +143,8 @@ function deptChips() {
     return `<button type="button" class="dl-chip${d.id === draft.dept ? ' on' : ''}" data-qcdept="${esc(d.id)}" role="radio" aria-checked="${d.id === draft.dept}" style="--d:${k.c1};--dt:${k.tint}"><i></i>${esc(d.name)}</button>`;
   }).join('') + custom.map((d) => {
     const k = deptCol(d.id);
-    return `<span class="qc-dwrap"><button type="button" class="dl-chip${d.id === draft.dept ? ' on' : ''}" data-qcdept="${esc(d.id)}" role="radio" aria-checked="${d.id === draft.dept}" style="--d:${k.c1};--dt:${k.tint}"><i></i>${esc(d.name)}</button><button type="button" class="qc-dx" data-qcdeptdel="${esc(d.id)}" aria-label="مسح قسم ${esc(d.name)}">×</button></span>`;
-  }).join('') + (hasOther() ? '' : '<button type="button" class="dl-chip" data-qc="newdept" style="--d:var(--navy);--dt:var(--sky-soft)"><i></i>+ قسم جديد</button>');
+    return `<span class="qc-dwrap"><button type="button" class="dl-chip${d.id === draft.dept ? ' on' : ''}" data-qcdept="${esc(d.id)}" role="radio" aria-checked="${d.id === draft.dept}" style="--d:${k.c1};--dt:${k.tint}"><i></i>${esc(d.name)}</button><button type="button" class="qc-dx" data-qcdeptdel="${esc(d.id)}" aria-label="مسح وظيفة ${esc(d.name)}">×</button></span>`;
+  }).join('') + (hasOther() ? '' : '<button type="button" class="dl-chip" data-qc="newdept" style="--d:var(--navy);--dt:var(--sky-soft)"><i></i>+ وظيفة جديدة</button>');
 }
 function paintDepts() {
   const lg = document.getElementById('qcDepts');
@@ -145,15 +162,15 @@ function pickDept(id) {
 function addDept() {
   const inp = document.getElementById('qcDeptName');
   const name = (inp.value || '').trim().replace(/\s+/g, ' ');
-  if (!name) { toast('اكتب اسم القسم الأول.'); inp.focus(); return; }
+  if (!name) { toast('اكتب اسم الوظيفة الأول.'); inp.focus(); return; }
   const same = depts().find((d) => normD(d.name) === normD(name));
   if (same) {
-    toast('القسم «' + same.name + '» موجود، واتختار.');
+    toast('الوظيفة «' + same.name + '» موجودة، واتختارت.');
   } else {
     const d = { id: 'qd' + Date.now().toString(36), name, code: freeCode(), color: freeColor() };
     custom.push(d);
     store.set(K.depts, custom);
-    toast('اتحفظ قسم «' + name + '»، وحرفه في رقم الكارنيه ' + d.code);
+    toast('اتحفظت وظيفة «' + name + '»، وحرفها في رقم الكارنيه ' + d.code);
     inp.value = '';
     pickDept(d.id);
     return;
@@ -164,13 +181,13 @@ function addDept() {
 function delDept(id) {
   const d = customOf(id); if (!d) return;
   const used = cards.filter((c) => c.dept === id).length;
-  if (used) { toast('قسم «' + d.name + '» عليه ' + arN(used) + ' كارنيه. غيّر قسمهم الأول وبعدين امسحه.'); return; }
-  if (!confirm('مسح قسم «' + d.name + '» من الأقسام؟')) return;
+  if (used) { toast('وظيفة «' + d.name + '» عليها ' + arN(used) + ' كارنيه. غيّر وظيفتهم الأول وبعدين امسحها.'); return; }
+  if (!confirm('مسح وظيفة «' + d.name + '» من الوظايف؟')) return;
   custom = custom.filter((x) => x.id !== id);
   store.set(K.depts, custom);
   if (draft.dept === id) pickDept(hasOther() ? 'other' : (siteDepts()[0] || {}).id);
   else paintDepts();
-  toast('اتمسح قسم «' + d.name + '»');
+  toast('اتمسحت وظيفة «' + d.name + '»');
 }
 const techs = () => (CFG.technicians || []).filter((t) => t && t.id);
 const techOf = (id) => techs().find((t) => t.id === id) || null;
@@ -239,9 +256,8 @@ function frontHTML(c, preview) {
   const k = deptCol(c.dept), rows = [];
   if (c.nid) rows.push(['الرقم القومي', `<span class="ltr">${esc(c.nid)}</span>`]);
   if (c.no) rows.push(['رقم الكارنيه', `<span class="ltr">${esc(c.no)}</span>`]);
-  rows.push(['القسم', esc(deptName(c.dept)), 1]);
   if (c.exp) rows.push(['صالح حتى', `<span class="ltr">${esc(fmtD(c.exp))}</span>`]);
-  const name = c.name ? esc(c.name) : (preview ? '<span class="ph-t">اسم الفني</span>' : '');
+  const name = c.name ? esc(c.name) : (preview ? '<span class="ph-t">الاسم</span>' : '');
   const job = c.job ? esc(c.job) : (preview ? '<span class="ph-t">الوظيفة</span>' : '');
   const photo = c.photo ? `<img src="${c.photo}" alt="">` : `<div class="ph">${SIL}</div>`;
   return `<div class="qc-b front" style="--c1:${k.c1};--c2:${k.c2}">
@@ -259,7 +275,7 @@ function frontHTML(c, preview) {
 
 function backHTML(c) {
   const k = deptCol(c.dept);
-  const ins = (S.instructions || []).filter((t) => String(t).trim());
+  const ins = ((MGMT_ROLES.indexOf(c.dept) >= 0 ? S.instructionsMgmt : S.instructions) || []).filter((t) => String(t).trim());
   const ct = contact();
   return `<div class="qc-b back" style="--c1:${k.c1};--c2:${k.c2}">
     <div class="qc-bt"><img class="qc-blogo" src="${LOGO}" alt="">
@@ -331,8 +347,8 @@ function render() {
 
   box.innerHTML = `
     <div class="pp-note">
-      كارنيهات بلوجو واسم <b>كوين سيرفيس</b>، وتعليمات الضهر نفس الكارنيه القديم.
-      الوظيفة يا إما تتكتب لوحدها حسب القسم، يا إما تكتبها بإيدك زي ما انت عايزها تتطبع.
+      كارنيهات بلوجو واسم <b>كوين سيرفيس</b>، وتعليمات الضهر مناسبة للأمن والإدارة (تقدر تعدّلها من «اسم الشركة وتعليمات الضهر» تحت).
+      اختار الوظيفة (فرد أمن، مشرف، مدير، نائب مدير). لو وظيفة جديدة اختار «أخرى» واكتب اسمها.
       <br><b>البيانات بتتحفظ على الجهاز ده بس</b> ومبتترفعش للسيرفر.
     </div>
 
@@ -348,23 +364,23 @@ function render() {
     <h3 class="adm-h">${ed ? 'تعديل كارنيه' : 'كارنيه جديد'}</h3>
     ${ed ? `<div class="qc-editing">بتعدّل كارنيه ${esc(draft.name)}. التعديل بيتحفظ مكان القديم.</div>` : ''}
 
-    <div class="dept-legend" id="qcDepts" role="radiogroup" aria-label="القسم">${deptChips()}</div>
+    <p class="qc-lbl">الوظيفة</p>
+    <div class="dept-legend" id="qcDepts" role="radiogroup" aria-label="الوظيفة">${deptChips()}</div>
     <div class="qc-newdept" id="qcNewDept"${draft.dept === 'other' ? '' : ' hidden'}>
-      <label for="qcDeptName">قسم مش موجود؟ اكتب اسمه واحفظه، وهيتضاف للأقسام اللي فوق.</label>
+      <label for="qcDeptName">وظيفة جديدة؟ اكتب اسمها واحفظها، وهتتضاف للوظايف اللي فوق.</label>
       <div class="qc-inline">
-        <input id="qcDeptName" maxlength="30" autocomplete="off" placeholder="اسم القسم، مثلاً: الحدائق">
-        <button class="btn btn-quiet" type="button" data-qc="deptadd">حفظ القسم</button>
+        <input id="qcDeptName" maxlength="30" autocomplete="off" placeholder="اسم الوظيفة، مثلاً: سائق">
+        <button class="btn btn-primary" type="button" data-qc="deptadd">حفظ الوظيفة</button>
       </div>
-      <p class="fine">القسم الجديد بيظهر في الكارنيهات بس، ومش بيتضاف لطلبات الصيانة عند السكان. لو مش محتاج قسم جديد، الكارنيه هيتطبع بقسم «أخرى».</p>
     </div>
 
     <div class="idf">
       <label class="fld wide"><span>الاسم</span>
         <input id="qcName" value="${esc(draft.name)}" maxlength="60" autocomplete="off" placeholder="الاسم زي البطاقة">
       </label>
-      <div class="fld wide"><span>الوظيفة</span>
+      <div class="fld wide"><span>الوظيفة المكتوبة على الكارنيه</span>
         <div class="qc-mode" role="radiogroup" aria-label="طريقة كتابة الوظيفة">
-          <button type="button" class="chip${draft.jobAuto ? ' on' : ''}" data-qcjobmode="auto" role="radio" aria-checked="${!!draft.jobAuto}">تلقائي من القسم</button>
+          <button type="button" class="chip${draft.jobAuto ? ' on' : ''}" data-qcjobmode="auto" role="radio" aria-checked="${!!draft.jobAuto}">تلقائي زي الوظيفة المختارة</button>
           <button type="button" class="chip${draft.jobAuto ? '' : ' on'}" data-qcjobmode="manual" role="radio" aria-checked="${!draft.jobAuto}">أكتبها بإيدي</button>
         </div>
         <div class="qc-inline">
@@ -372,7 +388,7 @@ function render() {
           <button class="btn btn-quiet" type="button" data-qc="jobadd"${draft.jobAuto ? ' hidden' : ''}>حفظ في القائمة</button>
         </div>
         <datalist id="qcJobList">${jobs.map((j) => `<option value="${esc(j)}">`).join('')}</datalist>
-        <p class="fine"${draft.jobAuto ? '' : ' hidden'}>الوظيفة بتتكتب لوحدها حسب القسم. عايز تكتبها بنفسك؟ اختار «أكتبها بإيدي».</p>
+        <p class="fine"${draft.jobAuto ? '' : ' hidden'}>بتتكتب لوحدها زي الوظيفة اللي اخترتها فوق. عايز تكتبها بشكل تاني، زي «مشرف وردية»؟ اختار «أكتبها بإيدي».</p>
         <div class="qc-chips"${draft.jobAuto ? ' hidden' : ''}>${jobs.map((j, i) => `<span class="qc-chip"><button type="button" data-qcjob="${i}">${esc(j)}</button><button type="button" class="x" data-qcjobdel="${i}" aria-label="مسح ${esc(j)} من القائمة">×</button></span>`).join('')}</div>
       </div>
       <label class="fld"><span>الرقم القومي</span>
@@ -415,7 +431,8 @@ function render() {
       <label class="fld"><span>السطر اللي تحت الاسم</span><input id="qcSTag" maxlength="50" value="${esc(S.tagline)}"></label>
       <label class="fld"><span>الشريط اللي تحت الوش</span><input id="qcSFoot" maxlength="60" value="${esc(S.frontFoot)}"></label>
       <label class="fld"><span>الشريط اللي تحت الضهر</span><input id="qcSFull" maxlength="70" value="${esc(S.fullName)}"></label>
-      <label class="fld"><span>تعليمات الضهر (كل تعليمة في سطر)</span><textarea id="qcSIns">${esc((S.instructions || []).join('\n'))}</textarea></label>
+      <label class="fld"><span>تعليمات الضهر: فرد أمن ومشرف وأي وظيفة تانية (كل تعليمة في سطر)</span><textarea id="qcSIns">${esc((S.instructions || []).join('\n'))}</textarea></label>
+      <label class="fld"><span>تعليمات الضهر: المدير ونائب المدير (كل تعليمة في سطر)</span><textarea id="qcSInsM">${esc((S.instructionsMgmt || []).join('\n'))}</textarea></label>
       <label class="fld"><span>رقم للتحقق أو الإبلاغ</span><input id="qcSCt" class="ltr" dir="ltr" inputmode="tel" maxlength="20" value="${esc(S.contact)}" placeholder="${esc(hotline() || 'اختياري')}"></label>
       <p class="fine">لو سبت الرقم فاضي بيتكتب رقم الخط الساخن من تبويب «الأرقام». الخط بيصغر لوحده لو التعليمات طولت.</p>
       <div class="pp-bar"><button class="btn btn-quiet" type="button" data-qc="resetins">رجوع للتعليمات الأصلية</button></div>
@@ -536,6 +553,7 @@ function saveCard() {
     tech: draft.tech
   };
   if (!c.name) return setErr('اكتب اسم صاحب الكارنيه.', 'qcName');
+  if (!c.job) return setErr(c.dept === 'other' ? 'اكتب اسم الوظيفة الجديدة واضغط «حفظ الوظيفة».' : 'اكتب الوظيفة.', c.dept === 'other' ? 'qcDeptName' : 'qcJob');
   if (c.nid && c.nid.length !== 14) return setErr('الرقم القومي لازم يبقى ١٤ رقم (مكتوب ' + arN(c.nid.length) + ').', 'qcNid');
   if (!c.no) c.no = nextNo(c.dept);
   const dupNo = cards.find((x) => x.no === c.no && x.id !== editingId);
@@ -737,6 +755,7 @@ function restore(file) {
     });
     if (d.settings) S = Object.assign({}, DEFAULT_SET, d.settings);
     if (!Array.isArray(S.instructions)) S.instructions = DEFAULT_INS.slice();
+    if (!Array.isArray(S.instructionsMgmt)) S.instructionsMgmt = DEFAULT_INS_MGMT.slice();
     if (typeof S.jobAuto !== 'boolean') S.jobAuto = true;
     if (Array.isArray(d.jobs)) d.jobs.forEach((j) => { if (jobs.indexOf(j) < 0) jobs.push(j); });
     if (Array.isArray(d.depts)) d.depts.forEach((x) => { if (x && x.id && x.name && !customOf(x.id)) custom.push(x); });
@@ -776,6 +795,7 @@ function wire() {
       S.fullName = document.getElementById('qcSFull').value.trim();
       S.contact = latin(document.getElementById('qcSCt').value.trim());
       S.instructions = document.getElementById('qcSIns').value.split('\n').map((s) => s.trim()).filter(Boolean);
+      S.instructionsMgmt = document.getElementById('qcSInsM').value.split('\n').map((s) => s.trim()).filter(Boolean);
       live();
       clearTimeout(setT); setT = setTimeout(() => { store.set(K.set, S); renderList(); }, 400);
     }
@@ -899,9 +919,10 @@ function wire() {
     if (act === 'recrop') openCrop(photoSrc || draft.photo);
     if (act === 'nophoto') { draft.photo = ''; photoSrc = ''; render(); }
     if (act === 'resetins') {
-      if (!confirm('ترجع التعليمات لنص الكارنيه القديم؟ تعديلاتك على التعليمات هتتشال.')) return;
-      S.instructions = DEFAULT_INS.slice(); store.set(K.set, S);
+      if (!confirm('ترجع التعليمات للنص الأصلي بتاع كوين؟ تعديلاتك على التعليمات هتتشال.')) return;
+      S.instructions = DEFAULT_INS.slice(); S.instructionsMgmt = DEFAULT_INS_MGMT.slice(); store.set(K.set, S);
       document.getElementById('qcSIns').value = S.instructions.join('\n');
+      document.getElementById('qcSInsM').value = S.instructionsMgmt.join('\n');
       live(); renderList();
     }
     if (act === 'selall') {

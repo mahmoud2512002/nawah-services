@@ -23,6 +23,7 @@
 .qc-inline input{ flex:1; min-width:0; }
 .qc-inline .btn{ flex:none; padding:10px 12px; font-size:13px; }
 .qc-inline .btn[hidden], .qc-chips[hidden]{ display:none; }
+.qc-lbl{ margin:0 0 6px; font-size:13px; font-weight:600; color:var(--muted); }
 .qc-mode{ display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
 #qcJob[readonly]{ background:var(--surface-2); color:var(--muted); cursor:default; }
 
