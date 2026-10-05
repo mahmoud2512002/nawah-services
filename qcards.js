@@ -15,7 +15,7 @@
 if (typeof VIEWS === 'undefined' || typeof go !== 'function' || typeof store === 'undefined') return;
 
 const LOGO = 'queen-logo.png';
-const K = { cards: 'qcards', set: 'qcardsSet', jobs: 'qcardsJobs' };
+const K = { cards: 'qcards', set: 'qcardsSet', jobs: 'qcardsJobs', depts: 'qcardsDepts' };
 
 /* نفس تعليمات ضهر الكارنيه القديم بالحرف */
 const DEFAULT_INS = [
@@ -41,6 +41,9 @@ if (!Array.isArray(S.instructions)) S.instructions = DEFAULT_INS.slice();
 let jobs = store.get(K.jobs, DEFAULT_JOBS.slice());
 if (!Array.isArray(cards)) cards = [];
 if (!Array.isArray(jobs)) jobs = DEFAULT_JOBS.slice();
+/* أقسام بتضيفها من «أخرى» — للكارنيهات بس، مش بتظهر للسكان في طلب الصيانة */
+let custom = store.get(K.depts, []);
+if (!Array.isArray(custom)) custom = [];
 
 const selected = new Set();
 let editingId = null, noTouched = false, draft = null, photoSrc = '', side = 'front', wired = false;
@@ -54,14 +57,100 @@ const fmtD = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); r
 const saveCards = () => store.set(K.cards, cards);
 
 /* الأقسام والألوان من الموقع نفسه — أي قسم تضيفه الإدارة بيظهر هنا */
-const depts = () => (typeof cardDepts === 'function' ? cardDepts() : (CFG.services || []));
+const siteDepts = () => (typeof cardDepts === 'function' ? cardDepts() : (CFG.services || []));
+const depts = () => siteDepts().concat(custom);
+const customOf = (id) => custom.find((d) => d.id === id) || null;
 const deptOf = (id) => depts().find((x) => x.id === id) || depts()[0] || { id: 'other', name: 'أخرى' };
 const deptName = (id) => { const d = deptOf(id); return d.name || ''; };
 function deptCol(id) {
+  const cu = customOf(id);
+  if (cu && cu.color) return { c1: cu.color.ink, c2: cu.color.deep, tint: cu.color.tint };
   if (typeof deptColor === 'function') { const k = deptColor(id); return { c1: k.ink, c2: k.deep, tint: k.tint }; }
   return { c1: '#3F2E8C', c2: '#1C1250', tint: '#ECE6FA' };
 }
-const codeOf = (id) => (typeof deptCode === 'function' ? deptCode(id) : 'X');
+function codeOf(id) {
+  const cu = customOf(id);
+  if (cu && cu.code) return cu.code;
+  return typeof deptCode === 'function' ? deptCode(id) : 'X';
+}
+/* القسم الجديد بياخد حرف فاضي لرقم الكارنيه ولون مش مستخدم */
+const EXTRA_COLORS = [
+  { ink: '#6E7F1F', deep: '#414C0E', tint: '#F0F3DC' },
+  { ink: '#D2552E', deep: '#7E2D14', tint: '#FDE9E1' },
+  { ink: '#7A3E9D', deep: '#45205C', tint: '#F1E6F8' },
+  { ink: '#2F6F4F', deep: '#173D2A', tint: '#E2F0E8' },
+  { ink: '#9C6B00', deep: '#5C3F00', tint: '#F8EED6' },
+  { ink: '#3D5A80', deep: '#1F2F45', tint: '#E5ECF5' },
+  { ink: '#A23B5A', deep: '#5E1F33', tint: '#F8E4EB' },
+  { ink: '#00796B', deep: '#004D43', tint: '#DDF1EE' },
+  { ink: '#5D4037', deep: '#33221C', tint: '#EFE7E3' },
+  { ink: '#283593', deep: '#141B4D', tint: '#E4E7F6' }
+];
+function freeCode() {
+  const used = {};
+  depts().forEach((d) => { used[codeOf(d.id)] = 1; });
+  const pool = (typeof CODE_SPARE === 'string' ? CODE_SPARE : '') + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for (let i = 0; i < pool.length; i++) if (!used[pool[i]]) return pool[i];
+  return 'X';
+}
+function freeColor() {
+  const used = {};
+  depts().forEach((d) => { used[deptCol(d.id).c1.toUpperCase()] = 1; });
+  return EXTRA_COLORS.find((c) => !used[c.ink.toUpperCase()]) || EXTRA_COLORS[custom.length % EXTRA_COLORS.length];
+}
+const normD = (s) => String(s || '').replace(/[\u064B-\u0652\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/[ىئ]/g, 'ي').replace(/ؤ/g, 'و').replace(/ة/g, 'ه').replace(/\s+/g, ' ').trim();
+const hasOther = () => siteDepts().some((d) => d.id === 'other');
+function deptChips() {
+  return siteDepts().map((d) => {
+    const k = deptCol(d.id);
+    return `<button type="button" class="dl-chip${d.id === draft.dept ? ' on' : ''}" data-qcdept="${esc(d.id)}" role="radio" aria-checked="${d.id === draft.dept}" style="--d:${k.c1};--dt:${k.tint}"><i></i>${esc(d.name)}</button>`;
+  }).join('') + custom.map((d) => {
+    const k = deptCol(d.id);
+    return `<span class="qc-dwrap"><button type="button" class="dl-chip${d.id === draft.dept ? ' on' : ''}" data-qcdept="${esc(d.id)}" role="radio" aria-checked="${d.id === draft.dept}" style="--d:${k.c1};--dt:${k.tint}"><i></i>${esc(d.name)}</button><button type="button" class="qc-dx" data-qcdeptdel="${esc(d.id)}" aria-label="مسح قسم ${esc(d.name)}">×</button></span>`;
+  }).join('') + (hasOther() ? '' : '<button type="button" class="dl-chip" data-qc="newdept" style="--d:var(--navy);--dt:var(--sky-soft)"><i></i>+ قسم جديد</button>');
+}
+function paintDepts() {
+  const lg = document.getElementById('qcDepts');
+  if (lg) lg.innerHTML = deptChips();
+  const nd = document.getElementById('qcNewDept');
+  if (nd) nd.hidden = draft.dept !== 'other' && !nd.dataset.force;
+}
+function pickDept(id) {
+  draft.dept = id;
+  if (!editingId && !noTouched) { draft.no = nextNo(id); const n = document.getElementById('qcNo'); if (n) n.value = draft.no; }
+  paintDepts();
+  live();
+}
+function addDept() {
+  const inp = document.getElementById('qcDeptName');
+  const name = (inp.value || '').trim().replace(/\s+/g, ' ');
+  if (!name) { toast('اكتب اسم القسم الأول.'); inp.focus(); return; }
+  const same = depts().find((d) => normD(d.name) === normD(name));
+  if (same) {
+    toast('القسم «' + same.name + '» موجود، واتختار.');
+  } else {
+    const d = { id: 'qd' + Date.now().toString(36), name, code: freeCode(), color: freeColor() };
+    custom.push(d);
+    store.set(K.depts, custom);
+    toast('اتحفظ قسم «' + name + '»، وحرفه في رقم الكارنيه ' + d.code);
+    inp.value = '';
+    pickDept(d.id);
+    return;
+  }
+  inp.value = '';
+  pickDept(same.id);
+}
+function delDept(id) {
+  const d = customOf(id); if (!d) return;
+  const used = cards.filter((c) => c.dept === id).length;
+  if (used) { toast('قسم «' + d.name + '» عليه ' + arN(used) + ' كارنيه. غيّر قسمهم الأول وبعدين امسحه.'); return; }
+  if (!confirm('مسح قسم «' + d.name + '» من الأقسام؟')) return;
+  custom = custom.filter((x) => x.id !== id);
+  store.set(K.depts, custom);
+  if (draft.dept === id) pickDept(hasOther() ? 'other' : (siteDepts()[0] || {}).id);
+  else paintDepts();
+  toast('اتمسح قسم «' + d.name + '»');
+}
 const techs = () => (CFG.technicians || []).filter((t) => t && t.id);
 const techOf = (id) => techs().find((t) => t.id === id) || null;
 function hotline() {
@@ -129,7 +218,7 @@ function frontHTML(c, preview) {
   const k = deptCol(c.dept), rows = [];
   if (c.nid) rows.push(['الرقم القومي', `<span class="ltr">${esc(c.nid)}</span>`]);
   if (c.no) rows.push(['رقم الكارنيه', `<span class="ltr">${esc(c.no)}</span>`]);
-  rows.push(['القسم', esc(deptName(c.dept))]);
+  rows.push(['القسم', esc(deptName(c.dept)), 1]);
   if (c.exp) rows.push(['صالح حتى', `<span class="ltr">${esc(fmtD(c.exp))}</span>`]);
   const name = c.name ? esc(c.name) : (preview ? '<span class="ph-t">اسم الفني</span>' : '');
   const job = c.job ? esc(c.job) : (preview ? '<span class="ph-t">الوظيفة</span>' : '');
@@ -142,7 +231,7 @@ function frontHTML(c, preview) {
     <div class="qc-fph">${photo}</div>
     <div class="qc-fname" data-fit>${name}</div>
     <div class="qc-fjob" data-fit>${job}</div>
-    <div class="qc-frows">${rows.map((r) => `<div class="r"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}</div>
+    <div class="qc-frows">${rows.map((r) => `<div class="r"><span>${r[0]}</span><b${r[2] ? ' data-fit' : ''}>${r[1]}</b></div>`).join('')}</div>
     <div class="qc-ffoot" data-fit>${esc(S.frontFoot)}</div>
   </div>`;
 }
@@ -237,11 +326,14 @@ function render() {
     <h3 class="adm-h">${ed ? 'تعديل كارنيه' : 'كارنيه جديد'}</h3>
     ${ed ? `<div class="qc-editing">بتعدّل كارنيه ${esc(draft.name)}. التعديل بيتحفظ مكان القديم.</div>` : ''}
 
-    <div class="dept-legend" role="radiogroup" aria-label="القسم">
-      ${depts().map((d) => {
-        const k = deptCol(d.id);
-        return `<button type="button" class="dl-chip${d.id === draft.dept ? ' on' : ''}" data-qcdept="${esc(d.id)}" role="radio" aria-checked="${d.id === draft.dept}" style="--d:${k.c1};--dt:${k.tint}"><i></i>${esc(d.name)}</button>`;
-      }).join('')}
+    <div class="dept-legend" id="qcDepts" role="radiogroup" aria-label="القسم">${deptChips()}</div>
+    <div class="qc-newdept" id="qcNewDept"${draft.dept === 'other' ? '' : ' hidden'}>
+      <label for="qcDeptName">قسم مش موجود؟ اكتب اسمه واحفظه، وهيتضاف للأقسام اللي فوق.</label>
+      <div class="qc-inline">
+        <input id="qcDeptName" maxlength="30" autocomplete="off" placeholder="اسم القسم، مثلاً: الحدائق">
+        <button class="btn btn-quiet" type="button" data-qc="deptadd">حفظ القسم</button>
+      </div>
+      <p class="fine">القسم الجديد بيظهر في الكارنيهات بس، ومش بيتضاف لطلبات الصيانة عند السكان. لو مش محتاج قسم جديد، الكارنيه هيتطبع بقسم «أخرى».</p>
     </div>
 
     <div class="idf">
@@ -595,7 +687,7 @@ async function doPrint() {
 
 /* ── نسخة احتياطية ─────────────────────── */
 function backup() {
-  const data = { app: 'queen-cards', v: 1, at: new Date().toISOString(), cards, settings: S, jobs };
+  const data = { app: 'queen-cards', v: 1, at: new Date().toISOString(), cards, settings: S, jobs, depts: custom };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
   a.download = 'كارنيهات-كوين-سيرفيس-' + new Date().toISOString().slice(0, 10) + '.json';
@@ -618,7 +710,8 @@ function restore(file) {
     if (d.settings) S = Object.assign({}, DEFAULT_SET, d.settings);
     if (!Array.isArray(S.instructions)) S.instructions = DEFAULT_INS.slice();
     if (Array.isArray(d.jobs)) d.jobs.forEach((j) => { if (jobs.indexOf(j) < 0) jobs.push(j); });
-    saveCards(); store.set(K.set, S); store.set(K.jobs, jobs);
+    if (Array.isArray(d.depts)) d.depts.forEach((x) => { if (x && x.id && x.name && !customOf(x.id)) custom.push(x); });
+    saveCards(); store.set(K.set, S); store.set(K.jobs, jobs); store.set(K.depts, custom);
     render();
     toast('اترجع ' + arN(added) + ' كارنيه جديد' + (replaced ? ' واتحدّث ' + arN(replaced) : ''));
   };
@@ -671,9 +764,7 @@ function wire() {
         const s0 = (tc.svcs || [])[0];
         if (s0 && s0 !== draft.dept && depts().some((d) => d.id === s0)) {
           draft.dept = s0;
-          document.querySelectorAll('#qcBox [data-qcdept]').forEach((b) => {
-            const on = b.dataset.qcdept === s0; b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
-          });
+          paintDepts();
         }
         /* الكارنيه المطبوع ياخد نفس رقم الفني اللي في أوامر الشغل */
         const no = techNo(draft.tech);
@@ -701,20 +792,21 @@ function wire() {
   });
 
   box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.id === 'qcDeptName') { e.preventDefault(); addDept(); return; }
     if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('.idf') && e.target.type !== 'file') {
       e.preventDefault(); saveCard();
     }
   });
 
   box.addEventListener('click', (e) => {
+    const dx = e.target.closest('[data-qcdeptdel]');
+    if (dx) { delDept(dx.dataset.qcdeptdel); return; }
     const dp = e.target.closest('[data-qcdept]');
     if (dp) {
-      draft.dept = dp.dataset.qcdept;
-      document.querySelectorAll('#qcBox [data-qcdept]').forEach((b) => {
-        const on = b === dp; b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
-      });
-      if (!editingId && !noTouched) { draft.no = nextNo(draft.dept); document.getElementById('qcNo').value = draft.no; }
-      live();
+      const nd = document.getElementById('qcNewDept');
+      if (nd) delete nd.dataset.force;
+      pickDept(dp.dataset.qcdept);
+      if (dp.dataset.qcdept === 'other') setTimeout(() => { const i = document.getElementById('qcDeptName'); if (i) i.focus(); }, 30);
       return;
     }
     const sd = e.target.closest('[data-qcside]');
@@ -749,6 +841,12 @@ function wire() {
     if (!b) return;
     const act = b.dataset.qc;
     if (act === 'save') saveCard();
+    if (act === 'deptadd') addDept();
+    if (act === 'newdept') {
+      const nd = document.getElementById('qcNewDept');
+      nd.dataset.force = '1'; nd.hidden = false;
+      document.getElementById('qcDeptName').focus();
+    }
     if (act === 'clear') { startNew(); render(); }
     if (act === 'jobadd') {
       const j = (document.getElementById('qcJob').value || '').trim();
