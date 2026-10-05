@@ -2,8 +2,8 @@
    كارنيهات كوين سيرفيس — صفحة جديدة في لوحة الإدارة
 
    • نفس فكرة صفحة الكارنيهات القديمة ونفس تعليمات الضهر،
-     بس باللوجو واسم كوين سيرفيس، والوظيفة بتتكتب بإيدك
-     (وتتحفظ في قائمة تختار منها بعد كده).
+     بس باللوجو واسم كوين سيرفيس. الوظيفة تلقائي من القسم أو بتتكتب
+     بإيدك (وتتحفظ في قائمة تختار منها بعد كده).
    • البيانات على جهاز الإدارة بس (localStorage) — مبتترفعش للسيرفر،
      ماعدا رقم الكارنيه قصاد الفني المربوط (زي الصفحة القديمة)
      عشان يظهر في أوامر الشغل.
@@ -44,6 +44,8 @@ if (!Array.isArray(jobs)) jobs = DEFAULT_JOBS.slice();
 /* أقسام بتضيفها من «أخرى» — للكارنيهات بس، مش بتظهر للسكان في طلب الصيانة */
 let custom = store.get(K.depts, []);
 if (!Array.isArray(custom)) custom = [];
+/* الوظيفة: تلقائي من القسم أو بتتكتب بالإيد — آخر اختيار بيتفضل */
+if (typeof S.jobAuto !== 'boolean') S.jobAuto = true;
 
 const selected = new Set();
 let editingId = null, noTouched = false, draft = null, photoSrc = '', side = 'front', wired = false;
@@ -72,6 +74,24 @@ function codeOf(id) {
   const cu = customOf(id);
   if (cu && cu.code) return cu.code;
   return typeof deptCode === 'function' ? deptCode(id) : 'X';
+}
+/* الوظيفة التلقائية حسب القسم */
+const AUTO_JOB = {
+  plumb: 'فني سباكة', elec: 'فني كهرباء', ac: 'فني تكييف', carp: 'نجار', sewer: 'فني صرف صحي',
+  clean: 'عامل نظافة', admin: 'إداري', super: 'مشرف فني', security: 'فرد أمن', other: 'فني'
+};
+function autoJob(id) {
+  if (AUTO_JOB[id]) return AUTO_JOB[id];
+  const n = String(deptName(id) || '').trim();
+  if (!n) return 'فني';
+  if (/^(فني|عامل|مشرف|موظف|فرد|سائق|مهندس|مساعد|إداري)/.test(n)) return n;
+  return 'فني ' + n.replace(/^ال(?=\S{3,})/, '');      // الحدائق ← فني حدائق
+}
+function syncJob() {
+  if (!draft || !draft.jobAuto) return;
+  draft.job = autoJob(draft.dept);
+  const j = document.getElementById('qcJob');
+  if (j) j.value = draft.job;
 }
 /* القسم الجديد بياخد حرف فاضي لرقم الكارنيه ولون مش مستخدم */
 const EXTRA_COLORS = [
@@ -119,6 +139,7 @@ function pickDept(id) {
   draft.dept = id;
   if (!editingId && !noTouched) { draft.no = nextNo(id); const n = document.getElementById('qcNo'); if (n) n.value = draft.no; }
   paintDepts();
+  syncJob();
   live();
 }
 function addDept() {
@@ -292,12 +313,13 @@ function needAssets() {
 
 /* ── الحالة ─────────────────────────────── */
 function blank(dept) {
-  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', nid: '', no: '', exp: '', photo: '', tech: '' };
+  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', jobAuto: S.jobAuto, nid: '', no: '', exp: '', photo: '', tech: '' };
 }
 function startNew(keepDept) {
   editingId = null; noTouched = false; photoSrc = '';
   draft = blank(keepDept || (draft && draft.dept));
   draft.no = nextNo(draft.dept);
+  syncJob();
 }
 
 /* ── الصفحة ─────────────────────────────── */
@@ -310,7 +332,7 @@ function render() {
   box.innerHTML = `
     <div class="pp-note">
       كارنيهات بلوجو واسم <b>كوين سيرفيس</b>، وتعليمات الضهر نفس الكارنيه القديم.
-      اكتب الوظيفة زي ما انت عايزها تتطبع، واحفظها في القائمة لو هتستخدمها تاني.
+      الوظيفة يا إما تتكتب لوحدها حسب القسم، يا إما تكتبها بإيدك زي ما انت عايزها تتطبع.
       <br><b>البيانات بتتحفظ على الجهاز ده بس</b> ومبتترفعش للسيرفر.
     </div>
 
@@ -341,12 +363,17 @@ function render() {
         <input id="qcName" value="${esc(draft.name)}" maxlength="60" autocomplete="off" placeholder="الاسم زي البطاقة">
       </label>
       <div class="fld wide"><span>الوظيفة</span>
+        <div class="qc-mode" role="radiogroup" aria-label="طريقة كتابة الوظيفة">
+          <button type="button" class="chip${draft.jobAuto ? ' on' : ''}" data-qcjobmode="auto" role="radio" aria-checked="${!!draft.jobAuto}">تلقائي من القسم</button>
+          <button type="button" class="chip${draft.jobAuto ? '' : ' on'}" data-qcjobmode="manual" role="radio" aria-checked="${!draft.jobAuto}">أكتبها بإيدي</button>
+        </div>
         <div class="qc-inline">
-          <input id="qcJob" value="${esc(draft.job)}" maxlength="40" list="qcJobList" autocomplete="off" placeholder="اكتب الوظيفة زي ما هتتطبع" aria-label="الوظيفة">
-          <button class="btn btn-quiet" type="button" data-qc="jobadd">حفظ في القائمة</button>
+          <input id="qcJob" value="${esc(draft.job)}" maxlength="40" list="qcJobList" autocomplete="off" placeholder="اكتب الوظيفة زي ما هتتطبع" aria-label="الوظيفة"${draft.jobAuto ? ' readonly' : ''}>
+          <button class="btn btn-quiet" type="button" data-qc="jobadd"${draft.jobAuto ? ' hidden' : ''}>حفظ في القائمة</button>
         </div>
         <datalist id="qcJobList">${jobs.map((j) => `<option value="${esc(j)}">`).join('')}</datalist>
-        <div class="qc-chips">${jobs.map((j, i) => `<span class="qc-chip"><button type="button" data-qcjob="${i}">${esc(j)}</button><button type="button" class="x" data-qcjobdel="${i}" aria-label="مسح ${esc(j)} من القائمة">×</button></span>`).join('')}</div>
+        <p class="fine"${draft.jobAuto ? '' : ' hidden'}>الوظيفة بتتكتب لوحدها حسب القسم. عايز تكتبها بنفسك؟ اختار «أكتبها بإيدي».</p>
+        <div class="qc-chips"${draft.jobAuto ? ' hidden' : ''}>${jobs.map((j, i) => `<span class="qc-chip"><button type="button" data-qcjob="${i}">${esc(j)}</button><button type="button" class="x" data-qcjobdel="${i}" aria-label="مسح ${esc(j)} من القائمة">×</button></span>`).join('')}</div>
       </div>
       <label class="fld"><span>الرقم القومي</span>
         <input id="qcNid" class="ltr" dir="ltr" inputmode="numeric" maxlength="14" value="${esc(draft.nid)}" autocomplete="off" placeholder="١٤ رقم">
@@ -500,7 +527,8 @@ function saveCard() {
   const c = {
     name: draft.name.trim().replace(/\s+/g, ' '),
     dept: draft.dept,
-    job: draft.job.trim().replace(/\s+/g, ' '),
+    job: (draft.jobAuto ? autoJob(draft.dept) : draft.job).trim().replace(/\s+/g, ' '),
+    jobAuto: !!draft.jobAuto,
     nid: latin(draft.nid).replace(/\D/g, ''),
     no: latin(draft.no).trim().toUpperCase(),
     exp: draft.exp,
@@ -529,7 +557,7 @@ function saveCard() {
     msg = 'اتحفظ كارنيه ' + c.name;
   }
   if (!saveCards()) return;
-  if (c.job) addJob(c.job);
+  if (c.job && !c.jobAuto) addJob(c.job);
   if (c.tech) pushTechNo(c.tech, c.no);
   toast(msg);
   startNew(c.dept);
@@ -540,7 +568,7 @@ function saveCard() {
 function editCard(id) {
   const c = byId(id); if (!c) return;
   editingId = id; noTouched = true; photoSrc = '';
-  draft = { name: c.name || '', dept: c.dept, job: c.job || '', nid: c.nid || '', no: c.no || '', exp: c.exp || '', photo: c.photo || '', tech: c.tech || '' };
+  draft = { name: c.name || '', dept: c.dept, job: c.job || '', jobAuto: !!c.jobAuto, nid: c.nid || '', no: c.no || '', exp: c.exp || '', photo: c.photo || '', tech: c.tech || '' };
   render();
   window.scrollTo(0, 0);
 }
@@ -709,6 +737,7 @@ function restore(file) {
     });
     if (d.settings) S = Object.assign({}, DEFAULT_SET, d.settings);
     if (!Array.isArray(S.instructions)) S.instructions = DEFAULT_INS.slice();
+    if (typeof S.jobAuto !== 'boolean') S.jobAuto = true;
     if (Array.isArray(d.jobs)) d.jobs.forEach((j) => { if (jobs.indexOf(j) < 0) jobs.push(j); });
     if (Array.isArray(d.depts)) d.depts.forEach((x) => { if (x && x.id && x.name && !customOf(x.id)) custom.push(x); });
     saveCards(); store.set(K.set, S); store.set(K.jobs, jobs); store.set(K.depts, custom);
@@ -765,6 +794,7 @@ function wire() {
         if (s0 && s0 !== draft.dept && depts().some((d) => d.id === s0)) {
           draft.dept = s0;
           paintDepts();
+          syncJob();
         }
         /* الكارنيه المطبوع ياخد نفس رقم الفني اللي في أوامر الشغل */
         const no = techNo(draft.tech);
@@ -814,6 +844,17 @@ function wire() {
       side = sd.dataset.qcside;
       document.querySelectorAll('#qcSide .chip').forEach((b) => b.classList.toggle('on', b === sd));
       renderPreview();
+      return;
+    }
+    const jm = e.target.closest('[data-qcjobmode]');
+    if (jm) {
+      const auto = jm.dataset.qcjobmode === 'auto';
+      if (auto === !!draft.jobAuto) return;
+      draft.jobAuto = auto;
+      S.jobAuto = auto; store.set(K.set, S);
+      syncJob();
+      render();
+      if (!auto) { const j = document.getElementById('qcJob'); if (j) { j.focus(); j.select(); } }
       return;
     }
     const jb = e.target.closest('[data-qcjob]');

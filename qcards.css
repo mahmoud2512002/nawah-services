@@ -22,6 +22,9 @@
 .qc-inline{ display:flex; gap:8px; }
 .qc-inline input{ flex:1; min-width:0; }
 .qc-inline .btn{ flex:none; padding:10px 12px; font-size:13px; }
+.qc-inline .btn[hidden], .qc-chips[hidden]{ display:none; }
+.qc-mode{ display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+#qcJob[readonly]{ background:var(--surface-2); color:var(--muted); cursor:default; }
 
 .qc-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .qc-chip{ display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:9px; background:var(--surface); font-size:12.5px; overflow:hidden; }
