@@ -28,6 +28,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="paper.css">
+<link rel="stylesheet" href="qcards.css">
 </head>
 <body>
 
@@ -348,6 +349,7 @@
         <button class="chip" data-tab="tech" type="button" data-t="adm.tTech">الفنيين</button>
         <button class="chip" data-tab="devices" type="button">أجهزة الإدارة</button>
         <button class="chip chip-go" data-go="cards" type="button">الكارنيهات</button>
+        <button class="chip chip-go" data-go="qcards" type="button">كارنيهات كوين</button>
         <button class="chip" data-tab="services" type="button" data-t="adm.tServices">الخدمات</button>
         <button class="chip" data-tab="lines" type="button" data-t="adm.tLines">الأرقام</button>
         <button class="chip" data-tab="content" type="button" data-t="adm.tContent">النصوص</button>
@@ -391,6 +393,17 @@
         <h2>كارنيهات العاملين</h2>
       </div>
       <div class="card" id="cardsBox"></div>
+    </section>
+
+    <!-- ══════════ ID CARDS: QUEEN SERVICE ══════════ -->
+    <section class="view" id="v-qcards" hidden>
+      <div class="vhead">
+        <button class="back" data-go="admin" type="button" data-ta="a11y.back">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+        </button>
+        <h2>كارنيهات كوين سيرفيس</h2>
+      </div>
+      <div class="card" id="qcBox"></div>
     </section>
 
 
@@ -592,5 +605,6 @@
 <script src="paper.js"></script>
 <script src="inbox.js"></script>
 <script src="app.js"></script>
+<script src="qcards.js"></script>
 </body>
 </html>

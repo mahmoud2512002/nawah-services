@@ -1,0 +1,793 @@
+/* ══════════════════════════════════════════════════════════════
+   كارنيهات كوين سيرفيس — صفحة جديدة في لوحة الإدارة
+
+   • نفس فكرة صفحة الكارنيهات القديمة ونفس تعليمات الضهر،
+     بس باللوجو واسم كوين سيرفيس، والوظيفة بتتكتب بإيدك
+     (وتتحفظ في قائمة تختار منها بعد كده).
+   • البيانات على جهاز الإدارة بس (localStorage) — مبتترفعش للسيرفر،
+     ماعدا رقم الكارنيه قصاد الفني المربوط (زي الصفحة القديمة)
+     عشان يظهر في أوامر الشغل.
+   • الطباعة: ٩ كارنيهات في ورقة A4، وش ثم ضهر معكوس.
+   • الملف بيسجّل نفسه في التنقّل (go) — مفيش تعديل في app.js.
+   ══════════════════════════════════════════════════════════════ */
+(function () {
+'use strict';
+if (typeof VIEWS === 'undefined' || typeof go !== 'function' || typeof store === 'undefined') return;
+
+const LOGO = 'queen-logo.png';
+const K = { cards: 'qcards', set: 'qcardsSet', jobs: 'qcardsJobs' };
+
+/* نفس تعليمات ضهر الكارنيه القديم بالحرف */
+const DEFAULT_INS = [
+  'تُبرَز للساكن قبل دخول أي وحدة سكنية.',
+  'لا يبدأ العمل إلا بأمر شغل معتمد.',
+  'البطاقة شخصية وملك الشركة، ولا يجوز التنازل عنها.',
+  'عند فقدها يُبلَّغ مسؤول الأمن فوراً.'
+];
+const DEFAULT_SET = {
+  company: 'كوين سيرفيس',
+  tagline: 'للخدمات المتكاملة',
+  frontFoot: 'المدينة السكنية بالضبعة',
+  fullName: 'شركة كوين سيرفيس للخدمات المتكاملة',
+  insTitle: 'تعليمات',
+  instructions: DEFAULT_INS.slice(),
+  contact: ''
+};
+const DEFAULT_JOBS = ['فني سباكة', 'فني كهرباء', 'فني تكييف', 'نجار', 'فني صرف صحي', 'عامل نظافة', 'مشرف صيانة', 'مساعد فني'];
+
+let cards = store.get(K.cards, []);
+let S = Object.assign({}, DEFAULT_SET, store.get(K.set, {}));
+if (!Array.isArray(S.instructions)) S.instructions = DEFAULT_INS.slice();
+let jobs = store.get(K.jobs, DEFAULT_JOBS.slice());
+if (!Array.isArray(cards)) cards = [];
+if (!Array.isArray(jobs)) jobs = DEFAULT_JOBS.slice();
+
+const selected = new Set();
+let editingId = null, noTouched = false, draft = null, photoSrc = '', side = 'front', wired = false;
+
+/* ── أدوات ──────────────────────────────── */
+const latin = (s) => String(s || '').replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 1632).replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 1776);
+const arN = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
+const qid = () => 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const byId = (id) => cards.find((c) => c.id === id) || null;
+const fmtD = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? m[3] + '/' + m[2] + '/' + m[1] : (iso || ''); };
+const saveCards = () => store.set(K.cards, cards);
+
+/* الأقسام والألوان من الموقع نفسه — أي قسم تضيفه الإدارة بيظهر هنا */
+const depts = () => (typeof cardDepts === 'function' ? cardDepts() : (CFG.services || []));
+const deptOf = (id) => depts().find((x) => x.id === id) || depts()[0] || { id: 'other', name: 'أخرى' };
+const deptName = (id) => { const d = deptOf(id); return d.name || ''; };
+function deptCol(id) {
+  if (typeof deptColor === 'function') { const k = deptColor(id); return { c1: k.ink, c2: k.deep, tint: k.tint }; }
+  return { c1: '#3F2E8C', c2: '#1C1250', tint: '#ECE6FA' };
+}
+const codeOf = (id) => (typeof deptCode === 'function' ? deptCode(id) : 'X');
+const techs = () => (CFG.technicians || []).filter((t) => t && t.id);
+const techOf = (id) => techs().find((t) => t.id === id) || null;
+function hotline() {
+  const ls = CFG.lines || [];
+  const l = ls.find((x) => x.hot && x.tel) || ls.find((x) => x.tel);
+  return (l && l.tel) || '';
+}
+const contact = () => S.contact || hotline();
+
+/* ── رقم الكارنيه: حرف القسم - السنة - مسلسل (نفس نظام الموقع) ── */
+function prefixFor(dept) {
+  const code = codeOf(dept);
+  return typeof cardPrefix === 'function' ? cardPrefix(code) : code + '-' + String(new Date().getFullYear()).slice(-2);
+}
+function nextNo(dept) {
+  const pre = prefixFor(dept);
+  let hi = typeof maxSerial === 'function' ? maxSerial(pre) : 0;     // كارنيهات الصفحة القديمة + أرقام الفنيين
+  cards.forEach((c) => {
+    const no = String(c.no || '');
+    if (no.indexOf(pre + '-') === 0) hi = Math.max(hi, Number(no.split('-').pop()) || 0);
+  });
+  return pre + '-' + String(hi + 1).padStart(3, '0');
+}
+/* رقم الفني اللي بيتكتب في أوامر الشغل */
+function techNo(id) {
+  if (!id || typeof cardNoFor !== 'function') return '';
+  return cardNoFor(id, typeof techById === 'function' ? techById(id) : techOf(id)) || '';
+}
+/* الفني المربوط ← رقمه يتسجّل في السيرفر عشان يظهر في أمر الشغل */
+async function pushTechNo(tech, no) {
+  if (!tech || !no || typeof DB === 'undefined' || !DB.ready()) return;
+  if (typeof DEVICE_OK === 'undefined' || !DEVICE_OK || typeof DEVICE === 'undefined' || !DEVICE) return;
+  if (typeof serverCards === 'function' && serverCards()[tech] === no) return;
+  try {
+    await DB.rpc('save_tech_cards', Object.assign(DB.cred(), { cards: [{ tech, no }], gone: [] }));
+    if (typeof serverCards === 'function') { const m = serverCards(); m[tech] = no; store.set('techCardNos', m); }
+    if (typeof refreshIssuedWOs === 'function') setTimeout(refreshIssuedWOs, 3000);
+  } catch (e) { /* النت فاصل — الرقم لسه محفوظ في الكارنيه */ }
+}
+
+/* ── QR ─────────────────────────────────── */
+const qrText = (c) => [S.company, c.no, c.name, c.job].filter(Boolean).join('\n');
+function qrSVG(text) {
+  try {
+    if (!window.qrcode) throw new Error('no-qr');
+    if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    const q = qrcode(0, 'M'); q.addData(text || ' '); q.make();
+    const n = q.getModuleCount(); let p = '';
+    for (let r = 0; r < n; r++) {
+      let c = 0;
+      while (c < n) {
+        if (q.isDark(r, c)) { const s = c; while (c < n && q.isDark(r, c)) c++; p += 'M' + s + ' ' + r + 'h' + (c - s) + 'v1h-' + (c - s) + 'z'; }
+        else c++;
+      }
+    }
+    return `<svg class="qr" viewBox="-1 -1 ${n + 2} ${n + 2}" shape-rendering="crispEdges" aria-hidden="true"><rect x="-1" y="-1" width="${n + 2}" height="${n + 2}" fill="#fff"/><path d="${p}" fill="#111"/></svg>`;
+  } catch (e) { return '<svg class="qr" viewBox="0 0 1 1" aria-hidden="true"></svg>'; }
+}
+
+/* ── رسم الكارنيه ───────────────────────── */
+const RINGS = '<svg class="rings" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="43" fill="none" stroke="#fff" stroke-width="6"/><circle cx="50" cy="50" r="28" fill="none" stroke="#fff" stroke-width="3"/><circle cx="50" cy="50" r="15" fill="none" stroke="#fff" stroke-width="1.6"/></svg>';
+const SIL = '<svg viewBox="0 0 60 70" aria-hidden="true"><circle cx="30" cy="25" r="12.5" fill="#CBC7DA"/><path d="M4 70c0-16 11.6-27 26-27s26 11 26 27z" fill="#CBC7DA"/></svg>';
+
+function frontHTML(c, preview) {
+  const k = deptCol(c.dept), rows = [];
+  if (c.nid) rows.push(['الرقم القومي', `<span class="ltr">${esc(c.nid)}</span>`]);
+  if (c.no) rows.push(['رقم الكارنيه', `<span class="ltr">${esc(c.no)}</span>`]);
+  rows.push(['القسم', esc(deptName(c.dept))]);
+  if (c.exp) rows.push(['صالح حتى', `<span class="ltr">${esc(fmtD(c.exp))}</span>`]);
+  const name = c.name ? esc(c.name) : (preview ? '<span class="ph-t">اسم الفني</span>' : '');
+  const job = c.job ? esc(c.job) : (preview ? '<span class="ph-t">الوظيفة</span>' : '');
+  const photo = c.photo ? `<img src="${c.photo}" alt="">` : `<div class="ph">${SIL}</div>`;
+  return `<div class="qc-b front" style="--c1:${k.c1};--c2:${k.c2}">
+    <div class="qc-fh">${RINGS}
+      <div class="qc-flogo"><img src="${LOGO}" alt=""></div>
+      <div class="qc-fco"><b data-fit>${esc(S.company)}</b><span data-fit>${esc(S.tagline)}</span></div>
+    </div>
+    <div class="qc-fph">${photo}</div>
+    <div class="qc-fname" data-fit>${name}</div>
+    <div class="qc-fjob" data-fit>${job}</div>
+    <div class="qc-frows">${rows.map((r) => `<div class="r"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}</div>
+    <div class="qc-ffoot" data-fit>${esc(S.frontFoot)}</div>
+  </div>`;
+}
+
+function backHTML(c) {
+  const k = deptCol(c.dept);
+  const ins = (S.instructions || []).filter((t) => String(t).trim());
+  const ct = contact();
+  return `<div class="qc-b back" style="--c1:${k.c1};--c2:${k.c2}">
+    <div class="qc-bt"><img class="qc-blogo" src="${LOGO}" alt="">
+      <div class="qc-bco"><b data-fit>${esc(S.company)}</b><span data-fit>${esc(S.tagline)}</span></div></div>
+    <div class="qc-bband"></div>
+    <div class="qc-bins" data-fitbox>${S.insTitle ? `<h4>${esc(S.insTitle)}</h4>` : ''}
+      <ol>${ins.map((t) => `<li>${esc(t)}</li>`).join('')}</ol></div>
+    <div class="qc-bid">${qrSVG(qrText(c))}
+      <div class="qc-bidt"><span>رقم الكارنيه</span><b class="ltr" data-fit>${esc(c.no || '—')}</b>
+        ${ct ? `<div class="ct" data-fit>للتحقق أو الإبلاغ: <b class="ltr">${esc(ct)}</b></div>` : ''}
+      </div></div>
+    <div class="qc-bfoot" data-fit>${esc(S.fullName)}</div>
+  </div>`;
+}
+
+/* تصغير الخط لحد ما الكلام يدخل في مكانه */
+function fit(root) {
+  root.querySelectorAll('[data-fit]').forEach((el) => {
+    el.style.fontSize = '';
+    let fs = parseFloat(getComputedStyle(el).fontSize), g = 30;
+    while (el.scrollWidth > el.clientWidth + 0.5 && g-- > 0) { fs *= 0.95; el.style.fontSize = fs + 'px'; }
+  });
+  root.querySelectorAll('[data-fitbox]').forEach((el) => {
+    el.style.fontSize = '';
+    let fs = parseFloat(getComputedStyle(el).fontSize), g = 30;
+    while (el.scrollHeight > el.clientHeight + 0.5 && g-- > 0) { fs *= 0.95; el.style.fontSize = fs + 'px'; }
+  });
+}
+
+const MM = 96 / 25.4, BW = 54 * MM, BH = 85.6 * MM;
+function placeScaled(box, html, scale) {
+  box.innerHTML = html;
+  box.style.width = (BW * scale) + 'px';
+  box.style.height = (BH * scale) + 'px';
+  box.firstElementChild.style.transform = 'scale(' + scale + ')';
+  fit(box);
+}
+
+/* الخط والـ QR بيتحمّلوا أول مرة بس */
+let assets = null;
+function needAssets() {
+  if (!assets) {
+    const f = document.fonts && document.fonts.load
+      ? Promise.all(['400', '600', '700'].map((w) => document.fonts.load(w + ' 12px QPlex').catch(() => {})))
+      : Promise.resolve();
+    const q = typeof needQR === 'function' ? needQR() : Promise.resolve();
+    assets = Promise.all([f, q]);
+  }
+  return assets;
+}
+
+/* ── الحالة ─────────────────────────────── */
+function blank(dept) {
+  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', nid: '', no: '', exp: '', photo: '', tech: '' };
+}
+function startNew(keepDept) {
+  editingId = null; noTouched = false; photoSrc = '';
+  draft = blank(keepDept || (draft && draft.dept));
+  draft.no = nextNo(draft.dept);
+}
+
+/* ── الصفحة ─────────────────────────────── */
+function render() {
+  const box = document.getElementById('qcBox');
+  if (!box) return;
+  if (!draft || !depts().some((d) => d.id === draft.dept)) startNew();
+  const ed = !!editingId;
+
+  box.innerHTML = `
+    <div class="pp-note">
+      كارنيهات بلوجو واسم <b>كوين سيرفيس</b>، وتعليمات الضهر نفس الكارنيه القديم.
+      اكتب الوظيفة زي ما انت عايزها تتطبع، واحفظها في القائمة لو هتستخدمها تاني.
+      <br><b>البيانات بتتحفظ على الجهاز ده بس</b> ومبتترفعش للسيرفر.
+    </div>
+
+    <div class="qc-prev" id="qcPrev">
+      <figure id="qcFigF"><div class="qc-sbox" id="qcPvF"></div><figcaption>الوش</figcaption></figure>
+      <figure id="qcFigB"><div class="qc-sbox" id="qcPvB"></div><figcaption>الضهر</figcaption></figure>
+    </div>
+    <div class="adm-tabs" id="qcSide" hidden style="justify-content:center;margin:-6px 0 14px">
+      <button class="chip on" type="button" data-qcside="front">الوش</button>
+      <button class="chip" type="button" data-qcside="back">الضهر</button>
+    </div>
+
+    <h3 class="adm-h">${ed ? 'تعديل كارنيه' : 'كارنيه جديد'}</h3>
+    ${ed ? `<div class="qc-editing">بتعدّل كارنيه ${esc(draft.name)}. التعديل بيتحفظ مكان القديم.</div>` : ''}
+
+    <div class="dept-legend" role="radiogroup" aria-label="القسم">
+      ${depts().map((d) => {
+        const k = deptCol(d.id);
+        return `<button type="button" class="dl-chip${d.id === draft.dept ? ' on' : ''}" data-qcdept="${esc(d.id)}" role="radio" aria-checked="${d.id === draft.dept}" style="--d:${k.c1};--dt:${k.tint}"><i></i>${esc(d.name)}</button>`;
+      }).join('')}
+    </div>
+
+    <div class="idf">
+      <label class="fld wide"><span>الاسم</span>
+        <input id="qcName" value="${esc(draft.name)}" maxlength="60" autocomplete="off" placeholder="الاسم زي البطاقة">
+      </label>
+      <div class="fld wide"><span>الوظيفة</span>
+        <div class="qc-inline">
+          <input id="qcJob" value="${esc(draft.job)}" maxlength="40" list="qcJobList" autocomplete="off" placeholder="اكتب الوظيفة زي ما هتتطبع" aria-label="الوظيفة">
+          <button class="btn btn-quiet" type="button" data-qc="jobadd">حفظ في القائمة</button>
+        </div>
+        <datalist id="qcJobList">${jobs.map((j) => `<option value="${esc(j)}">`).join('')}</datalist>
+        <div class="qc-chips">${jobs.map((j, i) => `<span class="qc-chip"><button type="button" data-qcjob="${i}">${esc(j)}</button><button type="button" class="x" data-qcjobdel="${i}" aria-label="مسح ${esc(j)} من القائمة">×</button></span>`).join('')}</div>
+      </div>
+      <label class="fld"><span>الرقم القومي</span>
+        <input id="qcNid" class="ltr" dir="ltr" inputmode="numeric" maxlength="14" value="${esc(draft.nid)}" autocomplete="off" placeholder="١٤ رقم">
+      </label>
+      <label class="fld"><span>رقم الكارنيه</span>
+        <input id="qcNo" class="ltr" dir="ltr" maxlength="20" value="${esc(draft.no)}" autocomplete="off">
+      </label>
+      <label class="fld"><span>صالح حتى (اختياري)</span>
+        <input id="qcExp" type="date" value="${esc(draft.exp)}">
+      </label>
+      <label class="fld"><span>ربط بفني (اختياري)</span>
+        <select id="qcTech">
+          <option value="">بدون ربط</option>
+          ${techs().map((t) => `<option value="${esc(t.id)}"${t.id === draft.tech ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}
+        </select>
+      </label>
+      <div class="fld wide"><span>الصورة</span>
+        <div class="qc-photo">
+          <div class="pv" id="qcPhotoPv">${draft.photo ? '<img src="' + draft.photo + '" alt="الصورة الحالية">' : 'مفيش صورة'}</div>
+          <div class="pa">
+            <button class="btn btn-quiet" type="button" data-qc="photo">${draft.photo ? 'تغيير الصورة' : 'اختيار صورة'}</button>
+            ${draft.photo ? '<button class="btn btn-quiet" type="button" data-qc="recrop">تعديل القص</button><button class="btn btn-quiet" type="button" data-qc="nophoto">إزالة</button>' : ''}
+          </div>
+        </div>
+        <input type="file" id="qcFile" accept="image/*" hidden>
+      </div>
+    </div>
+    <p class="fine" id="qcTechHint"${draft.tech ? '' : ' hidden'}>الكارنيه مربوط بفني، فرقمه هو اللي بيتكتب في أوامر الشغل اللي بتتسند له.</p>
+    <p class="err" id="qcErr" hidden></p>
+
+    <div class="pp-bar">
+      <button class="btn btn-primary" type="button" data-qc="save">${ed ? 'حفظ التعديل' : 'حفظ الكارنيه'}</button>
+      <button class="btn btn-quiet" type="button" data-qc="clear">${ed ? 'إلغاء التعديل' : 'تفريغ الخانات'}</button>
+    </div>
+
+    <details class="qc-set">
+      <summary>اسم الشركة وتعليمات الضهر</summary>
+      <label class="fld"><span>اسم الشركة على الكارنيه</span><input id="qcSCo" maxlength="40" value="${esc(S.company)}"></label>
+      <label class="fld"><span>السطر اللي تحت الاسم</span><input id="qcSTag" maxlength="50" value="${esc(S.tagline)}"></label>
+      <label class="fld"><span>الشريط اللي تحت الوش</span><input id="qcSFoot" maxlength="60" value="${esc(S.frontFoot)}"></label>
+      <label class="fld"><span>الشريط اللي تحت الضهر</span><input id="qcSFull" maxlength="70" value="${esc(S.fullName)}"></label>
+      <label class="fld"><span>تعليمات الضهر (كل تعليمة في سطر)</span><textarea id="qcSIns">${esc((S.instructions || []).join('\n'))}</textarea></label>
+      <label class="fld"><span>رقم للتحقق أو الإبلاغ</span><input id="qcSCt" class="ltr" dir="ltr" inputmode="tel" maxlength="20" value="${esc(S.contact)}" placeholder="${esc(hotline() || 'اختياري')}"></label>
+      <p class="fine">لو سبت الرقم فاضي بيتكتب رقم الخط الساخن من تبويب «الأرقام». الخط بيصغر لوحده لو التعليمات طولت.</p>
+      <div class="pp-bar"><button class="btn btn-quiet" type="button" data-qc="resetins">رجوع للتعليمات الأصلية</button></div>
+    </details>
+
+    <h3 class="adm-h" id="qcSavedH">الكارنيهات المحفوظة</h3>
+    <div class="qc-tools">
+      <input id="qcSearch" type="search" placeholder="بحث بالاسم أو الرقم" aria-label="بحث في الكارنيهات">
+      <button class="btn btn-quiet" type="button" data-qc="selall">تحديد الكل</button>
+    </div>
+    <div class="qc-grid" id="qcGrid"></div>
+    <p class="fine">الطباعة ٩ كارنيهات في الورقة: وش وبعده ضهر معكوس. اطبع بالحجم الفعلي ١٠٠٪ ومن غير هوامش، وعلى الوجهين بالقلب من الحافة الطويلة.</p>
+    <div class="pp-bar">
+      <button class="btn btn-primary" type="button" data-qc="print" id="qcPrintBtn">طباعة</button>
+      <button class="btn btn-quiet" type="button" data-qc="backup">نسخة احتياطية</button>
+      <button class="btn btn-quiet" type="button" data-qc="restore">استرجاع نسخة</button>
+    </div>
+    <input type="file" id="qcRestore" accept="application/json,.json" hidden>`;
+
+  wire();
+  renderPreview();
+  renderList();
+  needAssets().then(() => { renderPreview(); renderList(); });
+
+  /* الفنيين وأرقامهم من السيرفر — مرة واحدة */
+  if (typeof techServer === 'function' && techServer() && typeof TECHS_LOADED !== 'undefined' && !TECHS_LOADED && typeof loadServerTechs === 'function') {
+    TECHS_LOADED = true;
+    loadServerTechs().then(() => { if (isOpen()) refreshTechSelect(); });
+  }
+  if (typeof loadTechCards === 'function') loadTechCards().catch(() => {});
+}
+
+const isOpen = () => { const v = document.getElementById('v-qcards'); return v && !v.hidden; };
+
+function refreshTechSelect() {
+  const sel = document.getElementById('qcTech');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">بدون ربط</option>' + techs().map((t) =>
+    `<option value="${esc(t.id)}"${t.id === draft.tech ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
+}
+
+function renderPreview() {
+  const prev = document.getElementById('qcPrev');
+  if (!prev) return;
+  const w = prev.clientWidth - 24;
+  let scale = Math.min(1.3, (w - 14) / (BW * 2));
+  const both = scale >= 0.78;
+  if (!both) scale = Math.min(1.3, w / BW);
+  document.getElementById('qcSide').hidden = both;
+  document.getElementById('qcFigF').hidden = !both && side !== 'front';
+  document.getElementById('qcFigB').hidden = !both && side !== 'back';
+  placeScaled(document.getElementById('qcPvF'), frontHTML(draft, true), scale);
+  placeScaled(document.getElementById('qcPvB'), backHTML(draft), scale);
+}
+
+function renderList() {
+  const g = document.getElementById('qcGrid');
+  if (!g) return;
+  const q = latin((document.getElementById('qcSearch') || {}).value || '').trim().toLowerCase();
+  const list = cards.filter((c) => !q || [c.name, c.job, c.nid, c.no, deptName(c.dept)].join(' ').toLowerCase().indexOf(q) >= 0);
+  if (!cards.length) g.innerHTML = '<div class="qc-none">لسه مفيش كارنيهات. اكتب بيانات أول فني واضغط «حفظ الكارنيه».</div>';
+  else if (!list.length) g.innerHTML = '<div class="qc-none">مفيش كارنيه بالاسم أو الرقم ده.</div>';
+  else {
+    g.innerHTML = list.map((c) => {
+      const on = selected.has(c.id);
+      return `<article class="qc-th${on ? ' sel' : ''}" data-id="${esc(c.id)}">
+        <label class="pick" title="تحديد للطباعة"><input type="checkbox"${on ? ' checked' : ''} aria-label="تحديد ${esc(c.name)} للطباعة"></label>
+        <button class="tc" type="button" data-qcact="edit" aria-label="تعديل ${esc(c.name)}"><div class="qc-sbox"></div></button>
+        <div class="ta"><button type="button" data-qcact="edit">تعديل</button><button type="button" class="dl" data-qcact="del">حذف</button></div>
+      </article>`;
+    }).join('');
+    g.querySelectorAll('.qc-th').forEach((el) => placeScaled(el.querySelector('.qc-sbox'), frontHTML(byId(el.dataset.id)), 0.6));
+  }
+  counts();
+}
+
+function counts() {
+  const h = document.getElementById('qcSavedH');
+  if (h) h.textContent = 'الكارنيهات المحفوظة' + (cards.length ? ' (' + arN(cards.length) + ')' : '');
+  const pb = document.getElementById('qcPrintBtn');
+  if (pb) {
+    pb.textContent = selected.size ? 'طباعة المحدد (' + arN(selected.size) + ')' : cards.length ? 'طباعة الكل (' + arN(cards.length) + ')' : 'طباعة';
+    pb.disabled = !cards.length;
+  }
+  const sa = document.querySelector('#qcBox [data-qc="selall"]');
+  if (sa) { sa.textContent = selected.size && selected.size === cards.length ? 'إلغاء التحديد' : 'تحديد الكل'; sa.disabled = !cards.length; }
+}
+
+function setErr(msg, focusId) {
+  const e = document.getElementById('qcErr');
+  e.textContent = msg; e.hidden = !msg;
+  if (msg) { toast(msg); if (focusId) document.getElementById(focusId).focus(); }
+}
+
+function addJob(j) {
+  j = String(j || '').trim();
+  if (!j || jobs.indexOf(j) >= 0) return false;
+  jobs.push(j); store.set(K.jobs, jobs);
+  return true;
+}
+function paintJobs() {
+  const dl = document.getElementById('qcJobList');
+  if (dl) dl.innerHTML = jobs.map((j) => `<option value="${esc(j)}">`).join('');
+  const ch = document.querySelector('#qcBox .qc-chips');
+  if (ch) ch.innerHTML = jobs.map((j, i) => `<span class="qc-chip"><button type="button" data-qcjob="${i}">${esc(j)}</button><button type="button" class="x" data-qcjobdel="${i}" aria-label="مسح ${esc(j)} من القائمة">×</button></span>`).join('');
+}
+
+function saveCard() {
+  const c = {
+    name: draft.name.trim().replace(/\s+/g, ' '),
+    dept: draft.dept,
+    job: draft.job.trim().replace(/\s+/g, ' '),
+    nid: latin(draft.nid).replace(/\D/g, ''),
+    no: latin(draft.no).trim().toUpperCase(),
+    exp: draft.exp,
+    photo: draft.photo,
+    tech: draft.tech
+  };
+  if (!c.name) return setErr('اكتب اسم صاحب الكارنيه.', 'qcName');
+  if (c.nid && c.nid.length !== 14) return setErr('الرقم القومي لازم يبقى ١٤ رقم (مكتوب ' + arN(c.nid.length) + ').', 'qcNid');
+  if (!c.no) c.no = nextNo(c.dept);
+  const dupNo = cards.find((x) => x.no === c.no && x.id !== editingId);
+  if (dupNo) return setErr('رقم الكارنيه ده مستخدم لكارنيه ' + dupNo.name + '.', 'qcNo');
+  const dupNid = c.nid && cards.find((x) => x.nid === c.nid && x.id !== editingId);
+  if (dupNid && !confirm('الرقم القومي ده متسجل قبل كده لكارنيه ' + dupNid.name + '. تحفظ برضه؟')) return;
+  setErr('');
+
+  const now = Date.now();
+  let msg;
+  if (editingId) {
+    const old = byId(editingId);
+    Object.assign(old, c, { updated: now });
+    selected.add(old.id);
+    msg = 'اتحفظ التعديل على كارنيه ' + c.name;
+  } else {
+    c.id = qid(); c.created = now; c.updated = now;
+    cards.push(c); selected.add(c.id);
+    msg = 'اتحفظ كارنيه ' + c.name;
+  }
+  if (!saveCards()) return;
+  if (c.job) addJob(c.job);
+  if (c.tech) pushTechNo(c.tech, c.no);
+  toast(msg);
+  startNew(c.dept);
+  render();
+  const n = document.getElementById('qcName'); if (n) n.focus();
+}
+
+function editCard(id) {
+  const c = byId(id); if (!c) return;
+  editingId = id; noTouched = true; photoSrc = '';
+  draft = { name: c.name || '', dept: c.dept, job: c.job || '', nid: c.nid || '', no: c.no || '', exp: c.exp || '', photo: c.photo || '', tech: c.tech || '' };
+  render();
+  window.scrollTo(0, 0);
+}
+function delCard(id) {
+  const c = byId(id); if (!c) return;
+  if (!confirm('مسح كارنيه ' + c.name + '؟ مش هينفع ترجعه غير من نسخة احتياطية.')) return;
+  cards = cards.filter((x) => x.id !== id);
+  selected.delete(id);
+  saveCards();
+  if (editingId === id) { startNew(); render(); } else renderList();
+  toast('اتمسح كارنيه ' + c.name);
+}
+
+/* ── قص الصورة ─────────────────────────── */
+const CW = 270, CH = 360, OUTW = 360, OUTH = 480;
+const cr = { img: null, base: 1, s: 1, ox: 0, oy: 0 };
+let cv = null, cx = null;
+function cropDialog() {
+  let d = document.getElementById('qcCropDlg');
+  if (d) return d;
+  d = document.createElement('dialog');
+  d.id = 'qcCropDlg'; d.className = 'qc-dlg';
+  d.setAttribute('aria-labelledby', 'qcCropT');
+  d.innerHTML = `<div class="qc-crop">
+      <h3 id="qcCropT">ظبط الصورة</h3>
+      <canvas id="qcCropCv" aria-label="اسحب الصورة لتحريكها"></canvas>
+      <div class="z"><span>تصغير</span><input id="qcZoom" type="range" min="1" max="4" step="0.01" value="1" dir="ltr" aria-label="تكبير الصورة"><span>تكبير</span></div>
+      <div class="acts"><button class="btn btn-primary" type="button" id="qcCropOk">تم</button><button class="btn btn-quiet" type="button" id="qcCropNo">إلغاء</button></div>
+    </div>`;
+  document.body.appendChild(d);
+  cv = d.querySelector('#qcCropCv'); cx = cv.getContext('2d');
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  cv.width = CW * dpr; cv.height = CH * dpr; cx.scale(dpr, dpr);
+
+  let drag = null;
+  cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    cr.ox += e.clientX - drag.x; cr.oy += e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY };
+    clampCrop(); drawCrop();
+  });
+  cv.addEventListener('pointerup', () => { drag = null; });
+  cv.addEventListener('pointercancel', () => { drag = null; });
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const zi = d.querySelector('#qcZoom');
+    const z = Math.min(4, Math.max(1, (+zi.value) * (e.deltaY < 0 ? 1.06 : 1 / 1.06)));
+    zi.value = z; setZoom(z);
+  }, { passive: false });
+  d.querySelector('#qcZoom').addEventListener('input', (e) => setZoom(+e.target.value));
+  d.querySelector('#qcCropNo').addEventListener('click', () => d.close());
+  d.querySelector('#qcCropOk').addEventListener('click', () => {
+    const o = document.createElement('canvas'); o.width = OUTW; o.height = OUTH;
+    const k = OUTW / CW, g = o.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, OUTW, OUTH);
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(cr.img, cr.ox * k, cr.oy * k, cr.img.naturalWidth * cr.s * k, cr.img.naturalHeight * cr.s * k);
+    draft.photo = o.toDataURL('image/jpeg', 0.86);
+    d.close();
+    render();
+  });
+  return d;
+}
+function clampCrop() {
+  const w = cr.img.naturalWidth * cr.s, h = cr.img.naturalHeight * cr.s;
+  cr.ox = Math.min(0, Math.max(CW - w, cr.ox));
+  cr.oy = Math.min(0, Math.max(CH - h, cr.oy));
+}
+function drawCrop() {
+  cx.clearRect(0, 0, CW, CH);
+  cx.imageSmoothingQuality = 'high';
+  cx.drawImage(cr.img, cr.ox, cr.oy, cr.img.naturalWidth * cr.s, cr.img.naturalHeight * cr.s);
+  cx.save();
+  cx.strokeStyle = 'rgba(255,255,255,.85)'; cx.lineWidth = 1.5; cx.setLineDash([6, 5]);
+  cx.beginPath(); cx.ellipse(CW / 2, CH * 0.42, CW * 0.3, CH * 0.27, 0, 0, Math.PI * 2); cx.stroke();
+  cx.restore();
+}
+function setZoom(z) {
+  const ns = cr.base * z, mx = (CW / 2 - cr.ox) / cr.s, my = (CH / 2 - cr.oy) / cr.s;
+  cr.s = ns; cr.ox = CW / 2 - mx * ns; cr.oy = CH / 2 - my * ns;
+  clampCrop(); drawCrop();
+}
+function openCrop(src) {
+  const d = cropDialog();
+  const img = new Image();
+  img.onload = () => {
+    cr.img = img;
+    cr.base = Math.max(CW / img.naturalWidth, CH / img.naturalHeight);
+    cr.s = cr.base;
+    cr.ox = (CW - img.naturalWidth * cr.s) / 2;
+    cr.oy = (CH - img.naturalHeight * cr.s) * 0.3;
+    d.querySelector('#qcZoom').value = 1;
+    clampCrop(); drawCrop();
+    if (typeof d.showModal === 'function') d.showModal(); else d.setAttribute('open', '');
+  };
+  img.onerror = () => toast('الملف ده مش صورة يقدر المتصفح يفتحها.');
+  img.src = src;
+}
+
+/* ── الطباعة ───────────────────────────── */
+function sheetHTML(chunk, face, s, total) {
+  let cells = '';
+  for (let i = 0; i < 9; i++) {
+    const c = chunk[i], row = Math.floor(i / 3), k = i % 3;
+    const col = face === 'front' ? 2 - k : k;          // الضهر معكوس عشان كل وش يقابل ضهره
+    cells += `<div style="grid-row:${row + 1};grid-column:${col + 1}">${c ? (face === 'front' ? frontHTML(c) : backHTML(c)) : ''}</div>`;
+  }
+  const label = face === 'front' ? 'الوش' : 'الضهر، تتطبع على ضهر نفس الورقة';
+  return `<section class="qc-sheet"><div class="qc-sh"><img src="${LOGO}" alt=""><span>${esc(S.fullName)}</span>
+    <small>ورقة ${arN(s + 1)} من ${arN(total)}، ${label}</small></div>
+    <div class="qc-sg">${cells}</div></section>`;
+}
+async function doPrint() {
+  const list = selected.size ? cards.filter((c) => selected.has(c.id)) : cards.slice();
+  if (!list.length) { toast('مفيش كارنيهات للطباعة.'); return; }
+  await needAssets();
+  const total = Math.ceil(list.length / 9);
+  let html = '';
+  for (let s = 0; s < total; s++) {
+    const chunk = list.slice(s * 9, s * 9 + 9);
+    html += sheetHTML(chunk, 'front', s, total) + sheetHTML(chunk, 'back', s, total);
+  }
+  let pa = document.getElementById('qcPrint');
+  if (!pa) { pa = document.createElement('div'); pa.id = 'qcPrint'; pa.setAttribute('aria-hidden', 'true'); document.body.appendChild(pa); }
+  pa.innerHTML = html;
+  await Promise.all(Array.from(pa.querySelectorAll('img')).map((i) => (i.decode ? i.decode().catch(() => {}) : null)));
+  fit(pa);
+
+  const prevTitle = document.title;
+  document.title = 'كارنيهات-كوين-سيرفيس';
+  document.body.classList.add('qc-printing');
+  let done = false;
+  const clean = () => {
+    if (done) return; done = true;
+    document.body.classList.remove('qc-printing');
+    document.title = prevTitle;
+    pa.innerHTML = '';
+    window.removeEventListener('afterprint', clean);
+  };
+  window.addEventListener('afterprint', clean);
+  try { window.print(); } catch (e) { toast('المتصفح ده مش بيدعم الطباعة. افتح الموقع من كروم.'); }
+  setTimeout(clean, 1500);   // afterprint مش مضمون على كل المتصفحات
+}
+
+/* ── نسخة احتياطية ─────────────────────── */
+function backup() {
+  const data = { app: 'queen-cards', v: 1, at: new Date().toISOString(), cards, settings: S, jobs };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+  a.download = 'كارنيهات-كوين-سيرفيس-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('اتنزلت نسخة احتياطية فيها ' + arN(cards.length) + ' كارنيه');
+}
+function restore(file) {
+  const r = new FileReader();
+  r.onload = () => {
+    let d = null; try { d = JSON.parse(r.result); } catch (e) { d = null; }
+    if (!d || d.app !== 'queen-cards' || !Array.isArray(d.cards)) { toast('الملف ده مش نسخة احتياطية من كارنيهات كوين.'); return; }
+    if (!confirm('استرجاع ' + arN(d.cards.length) + ' كارنيه من النسخة؟ الكارنيهات الموجودة بتفضل، واللي ليه نفس الكارنيه بيتبدّل بالنسخة.')) return;
+    let added = 0, replaced = 0;
+    d.cards.forEach((c) => {
+      if (!c || !c.id) return;
+      const i = cards.findIndex((x) => x.id === c.id);
+      if (i >= 0) { cards[i] = c; replaced++; } else { cards.push(c); added++; }
+    });
+    if (d.settings) S = Object.assign({}, DEFAULT_SET, d.settings);
+    if (!Array.isArray(S.instructions)) S.instructions = DEFAULT_INS.slice();
+    if (Array.isArray(d.jobs)) d.jobs.forEach((j) => { if (jobs.indexOf(j) < 0) jobs.push(j); });
+    saveCards(); store.set(K.set, S); store.set(K.jobs, jobs);
+    render();
+    toast('اترجع ' + arN(added) + ' كارنيه جديد' + (replaced ? ' واتحدّث ' + arN(replaced) : ''));
+  };
+  r.readAsText(file);
+}
+
+/* ── الأحداث (مرة واحدة، بالتفويض على الصندوق) ── */
+let raf = 0, setT = 0;
+const live = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(renderPreview); };
+
+function wire() {
+  if (wired) return;
+  const box = document.getElementById('qcBox');
+  if (!box) return;
+  wired = true;
+
+  box.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.id === 'qcName') { draft.name = t.value; live(); }
+    else if (t.id === 'qcJob') { draft.job = t.value; live(); }
+    else if (t.id === 'qcNid') {
+      const v = latin(t.value).replace(/\D/g, '').slice(0, 14);
+      if (v !== t.value) t.value = v;
+      draft.nid = v; live();
+    }
+    else if (t.id === 'qcNo') { draft.no = latin(t.value).toUpperCase(); noTouched = true; live(); }
+    else if (t.id === 'qcExp') { draft.exp = t.value; live(); }
+    else if (t.id === 'qcSearch') renderList();
+    else if (/^qcS/.test(t.id)) {
+      S.company = document.getElementById('qcSCo').value.trim();
+      S.tagline = document.getElementById('qcSTag').value.trim();
+      S.frontFoot = document.getElementById('qcSFoot').value.trim();
+      S.fullName = document.getElementById('qcSFull').value.trim();
+      S.contact = latin(document.getElementById('qcSCt').value.trim());
+      S.instructions = document.getElementById('qcSIns').value.split('\n').map((s) => s.trim()).filter(Boolean);
+      live();
+      clearTimeout(setT); setT = setTimeout(() => { store.set(K.set, S); renderList(); }, 400);
+    }
+  });
+
+  box.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.id === 'qcExp') { draft.exp = t.value; live(); }
+    if (t.id === 'qcTech') {
+      draft.tech = t.value;
+      document.getElementById('qcTechHint').hidden = !draft.tech;
+      const tc = techOf(draft.tech);
+      if (tc) {
+        if (!draft.name.trim()) { draft.name = tc.name || ''; document.getElementById('qcName').value = draft.name; }
+        const s0 = (tc.svcs || [])[0];
+        if (s0 && s0 !== draft.dept && depts().some((d) => d.id === s0)) {
+          draft.dept = s0;
+          document.querySelectorAll('#qcBox [data-qcdept]').forEach((b) => {
+            const on = b.dataset.qcdept === s0; b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
+          });
+        }
+        /* الكارنيه المطبوع ياخد نفس رقم الفني اللي في أوامر الشغل */
+        const no = techNo(draft.tech);
+        if (no) { draft.no = no; noTouched = true; }
+        else if (!editingId && !noTouched) draft.no = nextNo(draft.dept);
+        document.getElementById('qcNo').value = draft.no;
+      }
+      live();
+    }
+    if (t.id === 'qcFile') {
+      const f = t.files && t.files[0]; t.value = '';
+      if (!f) return;
+      if (!/^image\//.test(f.type)) { toast('اختار ملف صورة (JPG أو PNG).'); return; }
+      const r = new FileReader();
+      r.onload = () => { photoSrc = r.result; openCrop(photoSrc); };
+      r.readAsDataURL(f);
+    }
+    if (t.id === 'qcRestore') { const f = t.files && t.files[0]; t.value = ''; if (f) restore(f); }
+    if (t.type === 'checkbox' && t.closest('.qc-th')) {
+      const art = t.closest('.qc-th');
+      if (t.checked) selected.add(art.dataset.id); else selected.delete(art.dataset.id);
+      art.classList.toggle('sel', t.checked);
+      counts();
+    }
+  });
+
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('.idf') && e.target.type !== 'file') {
+      e.preventDefault(); saveCard();
+    }
+  });
+
+  box.addEventListener('click', (e) => {
+    const dp = e.target.closest('[data-qcdept]');
+    if (dp) {
+      draft.dept = dp.dataset.qcdept;
+      document.querySelectorAll('#qcBox [data-qcdept]').forEach((b) => {
+        const on = b === dp; b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
+      });
+      if (!editingId && !noTouched) { draft.no = nextNo(draft.dept); document.getElementById('qcNo').value = draft.no; }
+      live();
+      return;
+    }
+    const sd = e.target.closest('[data-qcside]');
+    if (sd) {
+      side = sd.dataset.qcside;
+      document.querySelectorAll('#qcSide .chip').forEach((b) => b.classList.toggle('on', b === sd));
+      renderPreview();
+      return;
+    }
+    const jb = e.target.closest('[data-qcjob]');
+    if (jb) {
+      draft.job = jobs[+jb.dataset.qcjob] || '';
+      document.getElementById('qcJob').value = draft.job;
+      live();
+      return;
+    }
+    const jd = e.target.closest('[data-qcjobdel]');
+    if (jd) {
+      const j = jobs[+jd.dataset.qcjobdel];
+      jobs.splice(+jd.dataset.qcjobdel, 1); store.set(K.jobs, jobs); paintJobs();
+      toast('اتمسحت «' + j + '» من القائمة');
+      return;
+    }
+    const ac = e.target.closest('[data-qcact]');
+    if (ac) {
+      const id = ac.closest('.qc-th').dataset.id;
+      if (ac.dataset.qcact === 'edit') editCard(id);
+      if (ac.dataset.qcact === 'del') delCard(id);
+      return;
+    }
+    const b = e.target.closest('[data-qc]');
+    if (!b) return;
+    const act = b.dataset.qc;
+    if (act === 'save') saveCard();
+    if (act === 'clear') { startNew(); render(); }
+    if (act === 'jobadd') {
+      const j = (document.getElementById('qcJob').value || '').trim();
+      if (!j) { toast('اكتب الوظيفة الأول وبعدين احفظها في القائمة.'); document.getElementById('qcJob').focus(); return; }
+      toast(addJob(j) ? 'الوظيفة «' + j + '» اتضافت للقائمة' : 'الوظيفة «' + j + '» موجودة في القائمة');
+      paintJobs();
+    }
+    if (act === 'photo') document.getElementById('qcFile').click();
+    if (act === 'recrop') openCrop(photoSrc || draft.photo);
+    if (act === 'nophoto') { draft.photo = ''; photoSrc = ''; render(); }
+    if (act === 'resetins') {
+      if (!confirm('ترجع التعليمات لنص الكارنيه القديم؟ تعديلاتك على التعليمات هتتشال.')) return;
+      S.instructions = DEFAULT_INS.slice(); store.set(K.set, S);
+      document.getElementById('qcSIns').value = S.instructions.join('\n');
+      live(); renderList();
+    }
+    if (act === 'selall') {
+      if (selected.size && selected.size === cards.length) selected.clear();
+      else cards.forEach((c) => selected.add(c.id));
+      renderList();
+    }
+    if (act === 'print') doPrint();
+    if (act === 'backup') backup();
+    if (act === 'restore') document.getElementById('qcRestore').click();
+  });
+}
+
+let rt = 0;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (isOpen()) renderPreview(); }, 150); });
+
+/* ── التسجيل في التنقّل ─────────────────── */
+VIEWS.push('qcards');
+const goBase = go;
+go = function (name, arg) {
+  if (name === 'qcards' && !isAdmin) { askPassword(); return; }
+  goBase(name, arg);
+  if (name === 'qcards') {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.go === 'admin'));
+    render();
+  }
+};
+})();
