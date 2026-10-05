@@ -82,7 +82,7 @@ const saveCards = () => store.set(K.cards, cards);
 const ROLES = [
   { id: 'guard',   name: 'فرد أمن',   code: 'G', color: { ink: '#C0304A', deep: '#761628', tint: '#FBE4E8' } },
   { id: 'super',   name: 'مشرف',      code: 'S', color: { ink: '#1E2A72', deep: '#0E1545', tint: '#E6E9F8' } },
-  { id: 'manager', name: 'مدير',      code: 'M', color: { ink: '#16895C', deep: '#0A5436', tint: '#DDF4E9' } },
+  { id: 'manager', name: 'مدير',      code: 'M', color: { ink: '#1565C0', deep: '#0B3A78', tint: '#E3EEFC' } },
   { id: 'deputy',  name: 'نائب مدير', code: 'N', color: { ink: '#0E8A9A', deep: '#06525C', tint: '#DDF2F5' } },
   { id: 'other',   name: 'أخرى',      code: 'X', color: { ink: '#4A5578', deep: '#262D4A', tint: '#E9ECF4' } }
 ];
