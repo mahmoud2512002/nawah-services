@@ -65,6 +65,7 @@ let custom = store.get(K.depts, []);
 if (!Array.isArray(custom)) custom = [];
 /* الوظيفة على الكارنيه: تلقائي أو بتتكتب بالإيد — آخر اختيار بيتفضل */
 if (typeof S.jobAuto !== 'boolean') S.jobAuto = true;
+if (typeof S.secAuto !== 'boolean') S.secAuto = true;
 
 const selected = new Set();
 let editingId = null, noTouched = false, draft = null, photoSrc = '', side = 'front', wired = false;
@@ -81,8 +82,8 @@ const saveCards = () => store.set(K.cards, cards);
    «أخرى» بتفتح خانة تكتب فيها وظيفة جديدة وتتحفظ معاهم. */
 const ROLES = [
   { id: 'guard',   name: 'فرد أمن',   code: 'G', color: { ink: '#C0304A', deep: '#761628', tint: '#FBE4E8' } },
-  { id: 'super',   name: 'مشرف',      code: 'S', color: { ink: '#1E2A72', deep: '#0E1545', tint: '#E6E9F8' } },
-  { id: 'manager', name: 'مدير',      code: 'M', color: { ink: '#1565C0', deep: '#0B3A78', tint: '#E3EEFC' } },
+  { id: 'super',   name: 'مشرف',      code: 'S', color: { ink: '#6A3FB5', deep: '#3D2170', tint: '#EEE6FA' } },
+  { id: 'manager', name: 'مدير',      code: 'M', color: { ink: '#0D3B8C', deep: '#061F4F', tint: '#DCE6F7' } },
   { id: 'deputy',  name: 'نائب مدير', code: 'N', color: { ink: '#0E8A9A', deep: '#06525C', tint: '#DDF2F5' } },
   { id: 'other',   name: 'أخرى',      code: 'X', color: { ink: '#4A5578', deep: '#262D4A', tint: '#E9ECF4' } }
 ];
@@ -104,17 +105,27 @@ function codeOf(id) {
 function autoJob(id) {
   return id === 'other' ? '' : String(deptName(id) || '').trim();
 }
+/* القسم التلقائي حسب الوظيفة (الوظيفة الجديدة من «أخرى» قسمها بيتكتب بالإيد) */
+const AUTO_SEC = { guard: 'الأمن', super: 'الإشراف', manager: 'الإدارة', deputy: 'الإدارة' };
+const autoSec = (id) => AUTO_SEC[id] || '';
+/* الوظيفة والقسم: اللي على «تلقائي» بيتكتب من الوظيفة المختارة */
 function syncJob() {
-  if (!draft || !draft.jobAuto) return;
-  draft.job = autoJob(draft.dept);
-  const j = document.getElementById('qcJob');
-  if (j) j.value = draft.job;
+  if (!draft) return;
+  if (draft.jobAuto) {
+    draft.job = autoJob(draft.dept);
+    const j = document.getElementById('qcJob');
+    if (j) j.value = draft.job;
+  }
+  if (draft.secAuto) {
+    draft.sec = autoSec(draft.dept);
+    const s = document.getElementById('qcSec');
+    if (s) s.value = draft.sec;
+  }
 }
 /* الوظيفة الجديدة بتاخد حرف فاضي لرقم الكارنيه ولون مش مستخدم */
 const EXTRA_COLORS = [
   { ink: '#6E7F1F', deep: '#414C0E', tint: '#F0F3DC' },
   { ink: '#D2552E', deep: '#7E2D14', tint: '#FDE9E1' },
-  { ink: '#7A3E9D', deep: '#45205C', tint: '#F1E6F8' },
   { ink: '#2F6F4F', deep: '#173D2A', tint: '#E2F0E8' },
   { ink: '#9C6B00', deep: '#5C3F00', tint: '#F8EED6' },
   { ink: '#3D5A80', deep: '#1F2F45', tint: '#E5ECF5' },
@@ -256,6 +267,7 @@ function frontHTML(c, preview) {
   const k = deptCol(c.dept), rows = [];
   if (c.nid) rows.push(['الرقم القومي', `<span class="ltr">${esc(c.nid)}</span>`]);
   if (c.no) rows.push(['رقم الكارنيه', `<span class="ltr">${esc(c.no)}</span>`]);
+  if (c.sec) rows.push(['القسم', esc(c.sec), 1]);
   if (c.exp) rows.push(['صالح حتى', `<span class="ltr">${esc(fmtD(c.exp))}</span>`]);
   const name = c.name ? esc(c.name) : (preview ? '<span class="ph-t">الاسم</span>' : '');
   const job = c.job ? esc(c.job) : (preview ? '<span class="ph-t">الوظيفة</span>' : '');
@@ -329,7 +341,7 @@ function needAssets() {
 
 /* ── الحالة ─────────────────────────────── */
 function blank(dept) {
-  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', jobAuto: S.jobAuto, nid: '', no: '', exp: '', photo: '', tech: '' };
+  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', jobAuto: S.jobAuto, sec: '', secAuto: S.secAuto, nid: '', no: '', exp: '', photo: '', tech: '' };
 }
 function startNew(keepDept) {
   editingId = null; noTouched = false; photoSrc = '';
@@ -390,6 +402,14 @@ function render() {
         <datalist id="qcJobList">${jobs.map((j) => `<option value="${esc(j)}">`).join('')}</datalist>
         <p class="fine"${draft.jobAuto ? '' : ' hidden'}>بتتكتب لوحدها زي الوظيفة اللي اخترتها فوق. عايز تكتبها بشكل تاني، زي «مشرف وردية»؟ اختار «أكتبها بإيدي».</p>
         <div class="qc-chips"${draft.jobAuto ? ' hidden' : ''}>${jobs.map((j, i) => `<span class="qc-chip"><button type="button" data-qcjob="${i}">${esc(j)}</button><button type="button" class="x" data-qcjobdel="${i}" aria-label="مسح ${esc(j)} من القائمة">×</button></span>`).join('')}</div>
+      </div>
+      <div class="fld wide"><span>القسم المكتوب على الكارنيه</span>
+        <div class="qc-mode" role="radiogroup" aria-label="طريقة كتابة القسم">
+          <button type="button" class="chip${draft.secAuto ? ' on' : ''}" data-qcsecmode="auto" role="radio" aria-checked="${!!draft.secAuto}">تلقائي حسب الوظيفة</button>
+          <button type="button" class="chip${draft.secAuto ? '' : ' on'}" data-qcsecmode="manual" role="radio" aria-checked="${!draft.secAuto}">أكتبه بإيدي</button>
+        </div>
+        <input id="qcSec" value="${esc(draft.sec)}" maxlength="30" autocomplete="off" placeholder="${draft.secAuto ? 'مفيش قسم للوظيفة دي، اختار «أكتبه بإيدي»' : 'اكتب اسم القسم زي ما هيتطبع'}" aria-label="القسم"${draft.secAuto ? ' readonly' : ''}>
+        <p class="fine"${draft.secAuto ? '' : ' hidden'}>المدير ونائب المدير ← الإدارة، فرد الأمن ← الأمن، المشرف ← الإشراف.</p>
       </div>
       <label class="fld"><span>الرقم القومي</span>
         <input id="qcNid" class="ltr" dir="ltr" inputmode="numeric" maxlength="14" value="${esc(draft.nid)}" autocomplete="off" placeholder="١٤ رقم">
@@ -546,6 +566,8 @@ function saveCard() {
     dept: draft.dept,
     job: (draft.jobAuto ? autoJob(draft.dept) : draft.job).trim().replace(/\s+/g, ' '),
     jobAuto: !!draft.jobAuto,
+    sec: (draft.secAuto ? autoSec(draft.dept) : draft.sec).trim().replace(/\s+/g, ' '),
+    secAuto: !!draft.secAuto,
     nid: latin(draft.nid).replace(/\D/g, ''),
     no: latin(draft.no).trim().toUpperCase(),
     exp: draft.exp,
@@ -586,7 +608,8 @@ function saveCard() {
 function editCard(id) {
   const c = byId(id); if (!c) return;
   editingId = id; noTouched = true; photoSrc = '';
-  draft = { name: c.name || '', dept: c.dept, job: c.job || '', jobAuto: !!c.jobAuto, nid: c.nid || '', no: c.no || '', exp: c.exp || '', photo: c.photo || '', tech: c.tech || '' };
+  draft = { name: c.name || '', dept: c.dept, job: c.job || '', jobAuto: !!c.jobAuto, sec: c.sec || '', secAuto: c.secAuto !== false, nid: c.nid || '', no: c.no || '', exp: c.exp || '', photo: c.photo || '', tech: c.tech || '' };
+  syncJob();          // الكارنيهات القديمة اللي من غير قسم بتاخد قسمها التلقائي
   render();
   window.scrollTo(0, 0);
 }
@@ -757,6 +780,7 @@ function restore(file) {
     if (!Array.isArray(S.instructions)) S.instructions = DEFAULT_INS.slice();
     if (!Array.isArray(S.instructionsMgmt)) S.instructionsMgmt = DEFAULT_INS_MGMT.slice();
     if (typeof S.jobAuto !== 'boolean') S.jobAuto = true;
+    if (typeof S.secAuto !== 'boolean') S.secAuto = true;
     if (Array.isArray(d.jobs)) d.jobs.forEach((j) => { if (jobs.indexOf(j) < 0) jobs.push(j); });
     if (Array.isArray(d.depts)) d.depts.forEach((x) => { if (x && x.id && x.name && !customOf(x.id)) custom.push(x); });
     saveCards(); store.set(K.set, S); store.set(K.jobs, jobs); store.set(K.depts, custom);
@@ -780,6 +804,7 @@ function wire() {
     const t = e.target;
     if (t.id === 'qcName') { draft.name = t.value; live(); }
     else if (t.id === 'qcJob') { draft.job = t.value; live(); }
+    else if (t.id === 'qcSec') { draft.sec = t.value; live(); }
     else if (t.id === 'qcNid') {
       const v = latin(t.value).replace(/\D/g, '').slice(0, 14);
       if (v !== t.value) t.value = v;
@@ -864,6 +889,17 @@ function wire() {
       side = sd.dataset.qcside;
       document.querySelectorAll('#qcSide .chip').forEach((b) => b.classList.toggle('on', b === sd));
       renderPreview();
+      return;
+    }
+    const sm = e.target.closest('[data-qcsecmode]');
+    if (sm) {
+      const auto = sm.dataset.qcsecmode === 'auto';
+      if (auto === !!draft.secAuto) return;
+      draft.secAuto = auto;
+      S.secAuto = auto; store.set(K.set, S);
+      syncJob();
+      render();
+      if (!auto) { const s = document.getElementById('qcSec'); if (s) { s.focus(); s.select(); } }
       return;
     }
     const jm = e.target.closest('[data-qcjobmode]');
