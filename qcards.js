@@ -7,6 +7,8 @@
    • البيانات على جهاز الإدارة بس (localStorage) — مبتترفعش للسيرفر،
      ماعدا رقم الكارنيه قصاد الفني المربوط (زي الصفحة القديمة)
      عشان يظهر في أوامر الشغل.
+   • استيراد كتير مرة واحدة: ملف الإكسل + الصور (اسم كل صورة = الرقم القومي)،
+     وبعدين مراجعة كارنيه كارنيه أو حفظ الكل (مكتبة vendor/xlsx.mini.min.js بتتحمّل وقت الحاجة).
    • الطباعة: ٩ كارنيهات في ورقة A4، وش ثم ضهر معكوس.
    • الملف بيسجّل نفسه في التنقّل (go) — مفيش تعديل في app.js.
    ══════════════════════════════════════════════════════════════ */
@@ -77,6 +79,29 @@ const qid = () => 'q' + Date.now().toString(36) + Math.random().toString(36).sli
 const byId = (id) => cards.find((c) => c.id === id) || null;
 const fmtD = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? m[3] + '/' + m[2] + '/' + m[1] : (iso || ''); };
 const saveCards = () => store.set(K.cards, cards);
+
+/* ── كود التصريح: ٤ حروف + ٤ أرقام، عشوائي ومش بيتكرر — زي  KQTM-4827
+   (من غير I و O عشان متتلخبطش مع 1 و 0). بيتطبع على الوش وجوه الـ QR،
+   وبيتدوّر عليه في «التحقق من كارنيه». */
+const CODE_L = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const normCode = (s) => latin(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+function rnd(n) {
+  try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
+  catch (e) { return Math.floor(Math.random() * n); }
+}
+function genCode() {
+  const used = new Set(cards.map((c) => normCode(c.code)));
+  for (;;) {
+    let l = '', d = '';
+    for (let i = 0; i < 4; i++) { l += CODE_L[rnd(CODE_L.length)]; d += rnd(10); }
+    if (!used.has(l + d)) return l + '-' + d;
+  }
+}
+/* الكارنيهات اللي اتعملت قبل الكود بتاخد كود مرة واحدة */
+if (cards.some((c) => c && !c.code)) {
+  cards.forEach((c) => { if (c && !c.code) c.code = genCode(); });
+  saveCards();
+}
 
 /* وظايف كوين سيرفيس الثابتة — كل وظيفة ليها لون وحرف في رقم الكارنيه.
    «أخرى» بتفتح خانة تكتب فيها وظيفة جديدة وتتحفظ معاهم. */
@@ -170,6 +195,13 @@ function pickDept(id) {
   syncJob();
   live();
 }
+/* وظيفة جديدة بلون وحرف لوحدها — بترجع الـ id */
+function ensureDept(name) {
+  const d = { id: 'qd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: String(name).trim().replace(/\s+/g, ' '), code: freeCode(), color: freeColor() };
+  custom.push(d);
+  store.set(K.depts, custom);
+  return d.id;
+}
 function addDept() {
   const inp = document.getElementById('qcDeptName');
   const name = (inp.value || '').trim().replace(/\s+/g, ' ');
@@ -178,9 +210,7 @@ function addDept() {
   if (same) {
     toast('الوظيفة «' + same.name + '» موجودة، واتختارت.');
   } else {
-    const d = { id: 'qd' + Date.now().toString(36), name, code: freeCode(), color: freeColor() };
-    custom.push(d);
-    store.set(K.depts, custom);
+    const d = customOf(ensureDept(name));
     toast('اتحفظت وظيفة «' + name + '»، وحرفها في رقم الكارنيه ' + d.code);
     inp.value = '';
     pickDept(d.id);
@@ -241,7 +271,7 @@ async function pushTechNo(tech, no) {
 }
 
 /* ── QR ─────────────────────────────────── */
-const qrText = (c) => [S.company, c.no, c.name, c.job].filter(Boolean).join('\n');
+const qrText = (c) => [S.company, c.no, c.name, c.job, c.code ? 'كود التصريح ' + c.code : ''].filter(Boolean).join('\n');
 function qrSVG(text) {
   try {
     if (!window.qrcode) throw new Error('no-qr');
@@ -265,6 +295,7 @@ const SIL = '<svg viewBox="0 0 60 70" aria-hidden="true"><circle cx="30" cy="25"
 
 function frontHTML(c, preview) {
   const k = deptCol(c.dept), rows = [];
+  if (c.code) rows.push(['كود التصريح', `<span class="ltr qc-code">${esc(c.code)}</span>`]);
   if (c.nid) rows.push(['الرقم القومي', `<span class="ltr">${esc(c.nid)}</span>`]);
   if (c.no) rows.push(['رقم الكارنيه', `<span class="ltr">${esc(c.no)}</span>`]);
   if (c.sec) rows.push(['القسم', esc(c.sec), 1]);
@@ -280,7 +311,7 @@ function frontHTML(c, preview) {
     <div class="qc-fph">${photo}</div>
     <div class="qc-fname" data-fit>${name}</div>
     <div class="qc-fjob" data-fit>${job}</div>
-    <div class="qc-frows">${rows.map((r) => `<div class="r"><span>${r[0]}</span><b${r[2] ? ' data-fit' : ''}>${r[1]}</b></div>`).join('')}</div>
+    <div class="qc-frows${rows.length > 4 ? ' tight' : ''}">${rows.map((r) => `<div class="r"><span>${r[0]}</span><b${r[2] ? ' data-fit' : ''}>${r[1]}</b></div>`).join('')}</div>
     <div class="qc-ffoot" data-fit>${esc(S.frontFoot)}</div>
   </div>`;
 }
@@ -341,7 +372,7 @@ function needAssets() {
 
 /* ── الحالة ─────────────────────────────── */
 function blank(dept) {
-  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', jobAuto: S.jobAuto, sec: '', secAuto: S.secAuto, nid: '', no: '', exp: '', photo: '', tech: '' };
+  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', jobAuto: S.jobAuto, sec: '', secAuto: S.secAuto, nid: '', no: '', code: genCode(), exp: '', photo: '', tech: '' };
 }
 function startNew(keepDept) {
   editingId = null; noTouched = false; photoSrc = '';
@@ -364,6 +395,8 @@ function render() {
       <br><b>البيانات بتتحفظ على الجهاز ده بس</b> ومبتترفعش للسيرفر.
     </div>
 
+    ${verHTML()}
+
     <div class="qc-prev" id="qcPrev">
       <figure id="qcFigF"><div class="qc-sbox" id="qcPvF"></div><figcaption>الوش</figcaption></figure>
       <figure id="qcFigB"><div class="qc-sbox" id="qcPvB"></div><figcaption>الضهر</figcaption></figure>
@@ -373,7 +406,9 @@ function render() {
       <button class="chip" type="button" data-qcside="back">الضهر</button>
     </div>
 
-    <h3 class="adm-h">${ed ? 'تعديل كارنيه' : 'كارنيه جديد'}</h3>
+    ${ed ? '' : impHTML()}
+
+    <h3 class="adm-h">${ed ? 'تعديل كارنيه' : imp ? 'بيانات الكارنيه من الإكسل' : 'كارنيه جديد'}</h3>
     ${ed ? `<div class="qc-editing">بتعدّل كارنيه ${esc(draft.name)}. التعديل بيتحفظ مكان القديم.</div>` : ''}
 
     <p class="qc-lbl">الوظيفة</p>
@@ -417,6 +452,12 @@ function render() {
       <label class="fld"><span>رقم الكارنيه</span>
         <input id="qcNo" class="ltr" dir="ltr" maxlength="20" value="${esc(draft.no)}" autocomplete="off">
       </label>
+      <div class="fld"><span>كود التصريح (تلقائي)</span>
+        <div class="qc-inline">
+          <input id="qcCode" class="ltr qc-codein" dir="ltr" value="${esc(draft.code)}" readonly aria-label="كود التصريح">
+          <button class="btn btn-quiet" type="button" data-qc="newcode" title="لو الكارنيه ضاع: كود جديد والقديم يبطل">كود جديد</button>
+        </div>
+      </div>
       <label class="fld"><span>صالح حتى (اختياري)</span>
         <input id="qcExp" type="date" value="${esc(draft.exp)}">
       </label>
@@ -441,8 +482,10 @@ function render() {
     <p class="err" id="qcErr" hidden></p>
 
     <div class="pp-bar">
-      <button class="btn btn-primary" type="button" data-qc="save">${ed ? 'حفظ التعديل' : 'حفظ الكارنيه'}</button>
-      <button class="btn btn-quiet" type="button" data-qc="clear">${ed ? 'إلغاء التعديل' : 'تفريغ الخانات'}</button>
+      <button class="btn btn-primary" type="button" data-qc="save">${ed ? 'حفظ التعديل' : imp ? 'حفظ والتالي' : 'حفظ الكارنيه'}</button>
+      ${imp
+        ? '<button class="btn btn-quiet" type="button" data-qc="impskip">تخطّي الكارنيه ده</button>'
+        : `<button class="btn btn-quiet" type="button" data-qc="clear">${ed ? 'إلغاء التعديل' : 'تفريغ الخانات'}</button>`}
     </div>
 
     <details class="qc-set">
@@ -512,7 +555,7 @@ function renderList() {
   const g = document.getElementById('qcGrid');
   if (!g) return;
   const q = latin((document.getElementById('qcSearch') || {}).value || '').trim().toLowerCase();
-  const list = cards.filter((c) => !q || [c.name, c.job, c.nid, c.no, deptName(c.dept)].join(' ').toLowerCase().indexOf(q) >= 0);
+  const list = cards.filter((c) => !q || [c.name, c.job, c.nid, c.no, c.code, normCode(c.code), deptName(c.dept)].join(' ').toLowerCase().indexOf(q) >= 0);
   if (!cards.length) g.innerHTML = '<div class="qc-none">لسه مفيش كارنيهات. اكتب بيانات أول فني واضغط «حفظ الكارنيه».</div>';
   else if (!list.length) g.innerHTML = '<div class="qc-none">مفيش كارنيه بالاسم أو الرقم ده.</div>';
   else {
@@ -527,6 +570,7 @@ function renderList() {
     g.querySelectorAll('.qc-th').forEach((el) => placeScaled(el.querySelector('.qc-sbox'), frontHTML(byId(el.dataset.id)), 0.6));
   }
   counts();
+  renderVer();
 }
 
 function counts() {
@@ -560,24 +604,37 @@ function paintJobs() {
   if (ch) ch.innerHTML = jobs.map((j, i) => `<span class="qc-chip"><button type="button" data-qcjob="${i}">${esc(j)}</button><button type="button" class="x" data-qcjobdel="${i}" aria-label="مسح ${esc(j)} من القائمة">×</button></span>`).join('');
 }
 
-function saveCard() {
+/* بيانات الكارنيه من الخانات + المراجعة — بيستخدمها الحفظ العادي وحفظ الإكسل */
+function cardFrom(d) {
   const c = {
-    name: draft.name.trim().replace(/\s+/g, ' '),
-    dept: draft.dept,
-    job: (draft.jobAuto ? autoJob(draft.dept) : draft.job).trim().replace(/\s+/g, ' '),
-    jobAuto: !!draft.jobAuto,
-    sec: (draft.secAuto ? autoSec(draft.dept) : draft.sec).trim().replace(/\s+/g, ' '),
-    secAuto: !!draft.secAuto,
-    nid: latin(draft.nid).replace(/\D/g, ''),
-    no: latin(draft.no).trim().toUpperCase(),
-    exp: draft.exp,
-    photo: draft.photo,
-    tech: draft.tech
+    name: String(d.name || '').trim().replace(/\s+/g, ' '),
+    dept: d.dept,
+    job: String((d.jobAuto ? autoJob(d.dept) : d.job) || '').trim().replace(/\s+/g, ' '),
+    jobAuto: !!d.jobAuto,
+    sec: String((d.secAuto ? autoSec(d.dept) : d.sec) || '').trim().replace(/\s+/g, ' '),
+    secAuto: !!d.secAuto,
+    nid: latin(d.nid).replace(/\D/g, ''),
+    no: latin(d.no).trim().toUpperCase(),
+    code: d.code || genCode(),
+    exp: d.exp,
+    photo: d.photo,
+    tech: d.tech
   };
-  if (!c.name) return setErr('اكتب اسم صاحب الكارنيه.', 'qcName');
-  if (!c.job) return setErr(c.dept === 'other' ? 'اكتب اسم الوظيفة الجديدة واضغط «حفظ الوظيفة».' : 'اكتب الوظيفة.', c.dept === 'other' ? 'qcDeptName' : 'qcJob');
-  if (c.nid && c.nid.length !== 14) return setErr('الرقم القومي لازم يبقى ١٤ رقم (مكتوب ' + arN(c.nid.length) + ').', 'qcNid');
+  if (!c.name) return { err: 'اكتب اسم صاحب الكارنيه.', focus: 'qcName' };
+  if (!c.job) return c.dept === 'other'
+    ? { err: 'اكتب اسم الوظيفة الجديدة واضغط «حفظ الوظيفة».', focus: 'qcDeptName' }
+    : { err: 'اكتب الوظيفة.', focus: 'qcJob' };
+  if (c.nid && c.nid.length !== 14) return { err: 'الرقم القومي لازم يبقى ١٤ رقم (مكتوب ' + arN(c.nid.length) + ').', focus: 'qcNid' };
+  return { c };
+}
+
+function saveCard() {
+  const wasEd = !!editingId;
+  const v = cardFrom(draft);
+  if (v.err) return setErr(v.err, v.focus);
+  const c = v.c;
   if (!c.no) c.no = nextNo(c.dept);
+  if (cards.some((x) => x.id !== editingId && normCode(x.code) === normCode(c.code))) c.code = genCode();
   const dupNo = cards.find((x) => x.no === c.no && x.id !== editingId);
   if (dupNo) return setErr('رقم الكارنيه ده مستخدم لكارنيه ' + dupNo.name + '.', 'qcNo');
   const dupNid = c.nid && cards.find((x) => x.nid === c.nid && x.id !== editingId);
@@ -600,6 +657,11 @@ function saveCard() {
   if (c.job && !c.jobAuto) addJob(c.job);
   if (c.tech) pushTechNo(c.tech, c.no);
   toast(msg);
+  if (imp) {                       // مراجعة الإكسل ← الكارنيه اللي بعده (ولو كان تعديل كارنيه قديم نرجع لنفس الصف)
+    if (!wasEd) { imp.saved++; imp.i++; }
+    loadImp();
+    return;
+  }
   startNew(c.dept);
   render();
   const n = document.getElementById('qcName'); if (n) n.focus();
@@ -608,7 +670,7 @@ function saveCard() {
 function editCard(id) {
   const c = byId(id); if (!c) return;
   editingId = id; noTouched = true; photoSrc = '';
-  draft = { name: c.name || '', dept: c.dept, job: c.job || '', jobAuto: !!c.jobAuto, sec: c.sec || '', secAuto: c.secAuto !== false, nid: c.nid || '', no: c.no || '', exp: c.exp || '', photo: c.photo || '', tech: c.tech || '' };
+  draft = { name: c.name || '', dept: c.dept, job: c.job || '', jobAuto: !!c.jobAuto, sec: c.sec || '', secAuto: c.secAuto !== false, nid: c.nid || '', no: c.no || '', code: c.code || genCode(), exp: c.exp || '', photo: c.photo || '', tech: c.tech || '' };
   syncJob();          // الكارنيهات القديمة اللي من غير قسم بتاخد قسمها التلقائي
   render();
   window.scrollTo(0, 0);
@@ -619,13 +681,36 @@ function delCard(id) {
   cards = cards.filter((x) => x.id !== id);
   selected.delete(id);
   saveCards();
-  if (editingId === id) { startNew(); render(); } else renderList();
+  if (editingId === id) { if (imp) loadImp(); else { startNew(); render(); } } else renderList();
   toast('اتمسح كارنيه ' + c.name);
 }
 
 /* ── قص الصورة ─────────────────────────── */
-const CW = 270, CH = 360, OUTW = 360, OUTH = 480;
+/* الصورة المحفوظة ٣٠٠×٤٠٠ — كفاية للطباعة (الصورة على الكارنيه حوالي ٢ سم)
+   وصغيرة عشان مئات الكارنيهات تدخل في مساحة المتصفح */
+const CW = 270, CH = 360, OUTW = 300, OUTH = 400;
 const cr = { img: null, base: 1, s: 1, ox: 0, oy: 0 };
+function cropOut(img, s, ox, oy) {
+  const o = document.createElement('canvas'); o.width = OUTW; o.height = OUTH;
+  const k = OUTW / CW, g = o.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, OUTW, OUTH);
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(img, ox * k, oy * k, img.naturalWidth * s * k, img.naturalHeight * s * k);
+  return o.toDataURL('image/jpeg', 0.82);
+}
+/* قص تلقائي بنفس ظبط نافذة القص أول ما تفتح (الوش في النص وفوق شوية) */
+function autoPhoto(file) {
+  return new Promise((ok, fail) => {
+    const src = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.max(CW / img.naturalWidth, CH / img.naturalHeight);
+      ok({ photo: cropOut(img, s, (CW - img.naturalWidth * s) / 2, (CH - img.naturalHeight * s) * 0.3), src });
+    };
+    img.onerror = () => { URL.revokeObjectURL(src); fail(new Error('img')); };
+    img.src = src;
+  });
+}
 let cv = null, cx = null;
 function cropDialog() {
   let d = document.getElementById('qcCropDlg');
@@ -662,12 +747,7 @@ function cropDialog() {
   d.querySelector('#qcZoom').addEventListener('input', (e) => setZoom(+e.target.value));
   d.querySelector('#qcCropNo').addEventListener('click', () => d.close());
   d.querySelector('#qcCropOk').addEventListener('click', () => {
-    const o = document.createElement('canvas'); o.width = OUTW; o.height = OUTH;
-    const k = OUTW / CW, g = o.getContext('2d');
-    g.fillStyle = '#fff'; g.fillRect(0, 0, OUTW, OUTH);
-    g.imageSmoothingQuality = 'high';
-    g.drawImage(cr.img, cr.ox * k, cr.oy * k, cr.img.naturalWidth * cr.s * k, cr.img.naturalHeight * cr.s * k);
-    draft.photo = o.toDataURL('image/jpeg', 0.86);
+    draft.photo = cropOut(cr.img, cr.s, cr.ox, cr.oy);
     d.close();
     render();
   });
@@ -707,6 +787,286 @@ function openCrop(src) {
   };
   img.onerror = () => toast('الملف ده مش صورة يقدر المتصفح يفتحها.');
   img.src = src;
+}
+
+/* ── استيراد من الإكسل + الصور بالرقم القومي ─────────
+   الإكسل بيتقري، والصور بتتربط بالرقم القومي من اسم الملف،
+   وبعدين كل كارنيه بيظهر في المعاينة: «حفظ والتالي» أو «تخطّي»،
+   أو «حفظ الباقي كله» مرة واحدة. */
+let imp = null;              // { rows, i, saved, skipped[], noPic[], file }
+let impReport = null;        // ملخص آخر استيراد { text, skipped[], noPic[] }
+let impURL = '';             // رابط الصورة الأصلية للكارنيه اللي قدامك (لتعديل القص)
+const pics = new Map();      // الرقم القومي ← ملف الصورة
+let impBusy = false;
+
+const nidIn = (s) => { const m = /\d{14}/.exec(latin(s)); return m ? m[0] : ''; };
+function addPics(files) {
+  let ok = 0; const bad = [];
+  Array.from(files || []).forEach((f) => {
+    if (f.type && !/^image\//.test(f.type)) return;
+    const k = nidIn(f.name.replace(/\.[^.]+$/, ''));
+    if (k) { pics.set(k, f); ok++; } else bad.push(f.name);
+  });
+  return { ok, bad };
+}
+function cellText(v) {
+  if (v == null) return '';
+  if (typeof v === 'number') return String(Math.round(v));      // الرقم القومي لو اتكتب كرقم
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).trim();
+}
+/* بيدوّر على صف العناوين: لازم يبقى فيه «الاسم» و«الرقم القومي» */
+function findCols(rows) {
+  for (let r = 0; r < Math.min(rows.length, 20); r++) {
+    const col = {};
+    (rows[r] || []).forEach((x, i) => {
+      const t = normD(cellText(x));
+      if (!t) return;
+      if (/القومي/.test(t)) col.nid = i;
+      else if (/(^| )لو /.test(t) && /اخري/.test(t)) col.other = i;
+      else if (/الوظيف/.test(t)) { if (col.job == null) col.job = i; }
+      else if (/القسم/.test(t)) col.sec = i;
+      else if (/الاسم/.test(t)) { if (col.name == null) col.name = i; }
+    });
+    if (col.name != null && col.nid != null) return { row: r, col };
+  }
+  return null;
+}
+/* الوظيفة المكتوبة في الإكسل ← زرار الوظيفة (ولو جديدة بتتضاف للوظايف) */
+function roleFor(job, other) {
+  const pick = (name) => {
+    const n = normD(name);
+    const d = depts().find((x) => x.id !== 'other' && normD(x.name) === n);
+    return d ? d.id : ensureDept(name);
+  };
+  if (job && normD(job) !== normD('أخرى')) return pick(job);
+  if (other) return pick(other);
+  return 'other';
+}
+async function importXls(file) {
+  let rows;
+  try {
+    if (typeof loadScript !== 'function') throw new Error('no-loader');
+    await loadScript('vendor/xlsx.mini.min.js');
+    const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+    const sh = wb.Sheets['البيانات'] || wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(sh, { header: 1, raw: true, defval: '' });
+  } catch (e) {
+    toast('مقدرتش أفتح الملف ده. لو مش فاتح، احفظه من الإكسل بصيغة ‎.xlsx وجرّب تاني.');
+    return;
+  }
+  const f = findCols(rows);
+  if (!f) { toast('مش لاقي عمود «الاسم» و«الرقم القومي» في الملف. استخدم فايل الإكسل بتاع كوين.'); return; }
+  const g = (R, k) => (f.col[k] == null ? '' : cellText(R[f.col[k]]));
+  const list = [];
+  for (let r = f.row + 1; r < rows.length; r++) {
+    const R = rows[r] || [];
+    const name = g(R, 'name').replace(/\s+/g, ' ');
+    const nid = latin(g(R, 'nid')).replace(/\D/g, '');
+    if (!name && !nid) continue;                               // صف فاضي (فيه رقم «م» بس)
+    list.push({ name, nid, dept: roleFor(g(R, 'job'), g(R, 'other')), sec: g(R, 'sec'), row: r + 1 });
+  }
+  if (!list.length) { toast('الإكسل مفيهوش أسماء لسه.'); return; }
+  impReport = null;
+  imp = { rows: list, i: 0, saved: 0, skipped: [], noPic: [], file: file.name };
+  const wp = list.filter((x) => pics.has(x.nid)).length;
+  toast('اتقرا ' + arN(list.length) + ' اسم' + (pics.size ? '، و' + arN(wp) + ' منهم ليهم صور' : '. اختار الصور من «إضافة صور»'));
+  loadImp();
+}
+const rowLabel = (r) => 'صف ' + arN(r.row) + (r.name ? ' — ' + r.name : '');
+/* مسودة كارنيه من صف الإكسل */
+function rowDraft(r) {
+  const d = blank(r.dept);
+  d.name = r.name; d.nid = r.nid;
+  d.jobAuto = true; d.job = autoJob(r.dept);
+  if (r.sec) { d.secAuto = false; d.sec = r.sec; } else { d.secAuto = true; d.sec = autoSec(r.dept); }
+  d.no = nextNo(r.dept);
+  return d;
+}
+function dropURL() { if (impURL) { URL.revokeObjectURL(impURL); impURL = ''; } }
+async function loadImp() {
+  if (!imp) return;
+  if (imp.i >= imp.rows.length) { finishImp(); return; }
+  const r = imp.rows[imp.i];
+  editingId = null; noTouched = false; dropURL(); photoSrc = '';
+  draft = rowDraft(r);
+  await impPhoto();
+  render();
+  window.scrollTo(0, 0);
+}
+/* لو للكارنيه اللي قدامك صورة بالرقم القومي ← تتقص وتتحط */
+async function impPhoto() {
+  const r = imp && imp.rows[imp.i];
+  if (!r || draft.photo || !pics.has(r.nid)) return;
+  try {
+    const p = await autoPhoto(pics.get(r.nid));
+    if (!imp || imp.rows[imp.i] !== r) { URL.revokeObjectURL(p.src); return; }
+    dropURL(); impURL = p.src; photoSrc = p.src; draft.photo = p.photo;
+  } catch (e) { toast('الصورة ' + pics.get(r.nid).name + ' مش راضية تفتح. اختار صورة تانية.'); }
+}
+function skipImp() {
+  if (!imp || impBusy) return;
+  imp.skipped.push(rowLabel(imp.rows[imp.i]) + ': اتخطّى');
+  imp.i++;
+  loadImp();
+}
+async function saveAllImp() {
+  if (!imp || impBusy) return;
+  const left = imp.rows.length - imp.i;
+  if (!confirm('هيتحفظ ' + arN(left) + ' كارنيه مرة واحدة من غير مراجعة (أولهم الكارنيه اللي قدامك بالتعديلات اللي عملتها).\nأي صف فيه غلط هيتخطّى ويظهرلك في الآخر. نكمّل؟')) return;
+  impBusy = true;
+  let first = true;
+  for (; imp.i < imp.rows.length; imp.i++) {
+    const r = imp.rows[imp.i];
+    let d = draft;
+    if (!first) {
+      d = rowDraft(r);
+      if (pics.has(r.nid)) { try { const p = await autoPhoto(pics.get(r.nid)); d.photo = p.photo; URL.revokeObjectURL(p.src); } catch (e) { /* من غير صورة */ } }
+    }
+    first = false;
+    const v = cardFrom(d);
+    if (v.err) { imp.skipped.push(rowLabel(r) + ': ' + v.err); continue; }
+    const c = v.c;
+    const dup = c.nid && cards.find((x) => x.nid === c.nid);
+    if (dup) { imp.skipped.push(rowLabel(r) + ': الرقم القومي متسجل قبل كده لكارنيه ' + dup.name); continue; }
+    if (!c.no || cards.some((x) => x.no === c.no)) c.no = nextNo(c.dept);
+    if (cards.some((x) => normCode(x.code) === normCode(c.code))) c.code = genCode();
+    c.id = qid(); c.created = c.updated = Date.now();
+    cards.push(c);
+    if (!saveCards()) {
+      cards.pop();
+      imp.skipped.push(rowLabel(r) + ': مساحة التخزين على الجهاز خلصت، ووقف الحفظ هنا. اعمل نسخة احتياطية وامسح كارنيهات قديمة.');
+      break;
+    }
+    selected.add(c.id);
+    imp.saved++;
+    if (!c.photo) imp.noPic.push(rowLabel(r));
+    if (imp.saved % 5 === 0) toast('اتحفظ ' + arN(imp.saved) + ' من ' + arN(imp.rows.length) + '…');
+  }
+  impBusy = false;
+  finishImp();
+}
+function finishImp() {
+  const n = imp.saved;
+  impReport = {
+    text: 'خلص الإكسل: اتحفظ ' + arN(n) + ' كارنيه' + (imp.skipped.length ? '، واتخطّى ' + arN(imp.skipped.length) : '') + '. الكارنيهات الجديدة متحددة وجاهزة للطباعة.',
+    skipped: imp.skipped, noPic: imp.noPic
+  };
+  imp = null;
+  dropURL();
+  startNew();
+  render();
+  toast('اتحفظ ' + arN(n) + ' كارنيه من الإكسل');
+  const h = document.getElementById('qcImp'); if (h) h.scrollIntoView({ block: 'start' });
+}
+function stopImp() {
+  if (!imp) return;
+  if (!confirm('توقف مراجعة الإكسل؟ اللي اتحفظ بيفضل، والباقي (' + arN(imp.rows.length - imp.i) + ') مش هيتحفظ.')) return;
+  for (let k = imp.i; k < imp.rows.length; k++) imp.skipped.push(rowLabel(imp.rows[k]) + ': ما اتراجعش');
+  imp.i = imp.rows.length;
+  finishImp();
+}
+function impHTML() {
+  if (imp) {
+    const n = imp.rows.length, r = imp.rows[imp.i];
+    const wp = imp.rows.filter((x) => pics.has(x.nid)).length;
+    let st;
+    if (draft.photo && pics.has(r.nid)) st = '<span class="ok">✔ الصورة اتحطت من ملف <span class="ltr">' + esc(pics.get(r.nid).name) + '</span></span>';
+    else if (draft.photo) st = '<span class="ok">✔ فيه صورة</span>';
+    else if (r.nid) st = '<span class="no">✖ مفيش صورة اسمها <span class="ltr">' + esc(r.nid) + '</span> — اضغط «إضافة صور» أو اختار صورته من خانة الصورة تحت.</span>';
+    else st = '<span class="no">✖ الصف ده مفيهوش رقم قومي، فمش هينفع يتربط بصورة. اختار الصورة بإيدك.</span>';
+    return `<div class="qc-imp on" id="qcImp">
+      <div class="qc-imph"><b>مراجعة الإكسل: كارنيه ${arN(imp.i + 1)} من ${arN(n)}</b><span>${esc(rowLabel(r))}</span></div>
+      <div class="qc-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${n}" aria-valuenow="${imp.i}"><i style="width:${(imp.i / n * 100).toFixed(1)}%"></i></div>
+      <p class="qc-st">${st}</p>
+      <p class="fine">اتحفظ ${arN(imp.saved)} لحد دلوقتي • ${arN(wp)} من ${arN(n)} ليهم صور • راجع المعاينة واضغط «حفظ والتالي».</p>
+      <div class="pp-bar">
+        <button class="btn ${pics.size ? 'btn-quiet' : 'btn-primary'}" type="button" data-qc="imppics">إضافة صور${pics.size ? ' (' + arN(pics.size) + ')' : ''}</button>
+        <button class="btn btn-quiet" type="button" data-qc="impall">حفظ الباقي كله مرة واحدة</button>
+        <button class="btn btn-quiet" type="button" data-qc="impstop">إنهاء</button>
+      </div>
+      <input type="file" id="qcPics" accept="image/*" multiple hidden>
+    </div>`;
+  }
+  const rep = impReport ? `<div class="qc-imprep">
+      <b>${esc(impReport.text)}</b>
+      ${impReport.skipped.length ? '<p>اللي اتخطّى:</p><ul>' + impReport.skipped.map((s) => '<li>' + esc(s) + '</li>').join('') + '</ul>' : ''}
+      ${impReport.noPic.length ? '<p>اتحفظوا من غير صورة (افتح الكارنيه واختار صورته):</p><ul>' + impReport.noPic.map((s) => '<li>' + esc(s) + '</li>').join('') + '</ul>' : ''}
+      <button class="btn btn-quiet" type="button" data-qc="repok">تمام</button>
+    </div>` : '';
+  return `<details class="qc-imp" id="qcImp"${impReport || pics.size ? ' open' : ''}>
+      <summary>كارنيهات كتير مرة واحدة من الإكسل</summary>
+      <ol class="qc-steps">
+        <li>اختار فايل الإكسل اللي الناس ملته.</li>
+        <li>اختار كل الصور مرة واحدة. لازم اسم كل صورة يكون الرقم القومي بتاع صاحبها، زي <span class="ltr">30123541762275.jpg</span>.</li>
+        <li>كل كارنيه هيظهرلك جاهز في المعاينة: راجعه واضغط «حفظ والتالي» لحد ما يخلصوا.</li>
+      </ol>
+      <div class="pp-bar">
+        <button class="btn btn-primary" type="button" data-qc="impxls">اختيار ملف الإكسل</button>
+        <button class="btn btn-quiet" type="button" data-qc="imppics">اختيار الصور${pics.size ? ' (' + arN(pics.size) + ')' : ''}</button>
+      </div>
+      <p class="fine">تقدر تختار الصور قبل الإكسل أو بعده. على الكمبيوتر افتح فولدر الصور واضغط Ctrl+A عشان تختارهم كلهم.</p>
+      ${rep}
+      <input type="file" id="qcXls" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
+      <input type="file" id="qcPics" accept="image/*" multiple hidden>
+    </details>`;
+}
+
+/* ── التحقق من كارنيه (ضد التزوير) ─────────────────
+   اكتب أي حاجة من الكارنيه: كود التصريح أو الرقم القومي أو رقم الكارنيه
+   (لازم يطابق بالظبط) أو الاسم (بيدوّر جواه). لو اتطابق الكود أو الرقم
+   ← «طالع من عندنا» وتظهر كل البيانات والصورة للمقارنة. */
+let verQ = '';
+const dayD = (ms) => { const d = new Date(ms); return isNaN(d) ? '' : d.toISOString().slice(0, 10); };
+function verHTML() {
+  return `<div class="qc-ver">
+      <label for="qcVer"><b>التحقق من كارنيه</b> — اكتب كود التصريح أو الرقم القومي أو رقم الكارنيه أو الاسم</label>
+      <input id="qcVer" type="search" dir="auto" autocomplete="off" value="${esc(verQ)}" placeholder="مثلاً: KQTM-4827">
+      <div id="qcVerRes" aria-live="polite"></div>
+    </div>`;
+}
+function verRow(c, sure) {
+  const today = dayD(Date.now());
+  const ex = c.exp ? (c.exp < today ? '<b class="no">منتهي من ' + esc(fmtD(c.exp)) + '</b>' : 'صالح حتى ' + esc(fmtD(c.exp))) : 'من غير تاريخ انتهاء';
+  const rows = [
+    ['كود التصريح', '<span class="ltr">' + esc(c.code || '—') + '</span>'],
+    ['الاسم', esc(c.name)],
+    ['الوظيفة', esc(c.job || '')],
+    ['القسم', esc(c.sec || '—')],
+    ['الرقم القومي', '<span class="ltr">' + esc(c.nid || '—') + '</span>'],
+    ['رقم الكارنيه', '<span class="ltr">' + esc(c.no || '—') + '</span>'],
+    ['الصلاحية', ex],
+    ['اتعمل يوم', '<span class="ltr">' + esc(fmtD(dayD(c.created))) + '</span>']
+  ];
+  return `<article class="qc-vr${sure ? ' sure' : ''}" data-id="${esc(c.id)}">
+      <div class="qc-sbox"></div>
+      <div class="qc-vd">
+        <dl>${rows.map((r) => '<div><dt>' + r[0] + '</dt><dd>' + r[1] + '</dd></div>').join('')}</dl>
+        <button class="btn btn-quiet" type="button" data-qcact="edit">فتح الكارنيه</button>
+      </div>
+    </article>`;
+}
+function renderVer() {
+  const box = document.getElementById('qcVerRes');
+  if (!box) return;
+  const q = verQ.trim();
+  if (!q) { box.innerHTML = ''; return; }
+  const nq = normCode(q), tq = normD(q);
+  const exact = nq.length >= 4 ? cards.filter((c) => normCode(c.code) === nq || c.nid === nq || normCode(c.no) === nq) : [];
+  let html;
+  if (exact.length) {
+    html = '<p class="qc-vok">✔ الكارنيه ده طالع من عندنا. قارن الصورة والاسم باللي قدامك.</p>' + exact.map((c) => verRow(c, true)).join('');
+  } else {
+    const part = cards.filter((c) =>
+      (tq.length >= 2 && normD(c.name).indexOf(tq) >= 0) ||
+      (nq.length >= 3 && (normCode(c.code).indexOf(nq) >= 0 || String(c.nid || '').indexOf(nq) >= 0 || normCode(c.no).indexOf(nq) >= 0))
+    ).slice(0, 6);
+    html = part.length
+      ? '<p class="qc-vmaybe">مفيش تطابق كامل. دول أقرب كارنيهات للي كتبته، اتأكد إن الكود اللي على الكارنيه نفس الكود هنا بالظبط:</p>' + part.map((c) => verRow(c, false)).join('')
+      : '<p class="qc-vno">✖ مفيش كارنيه عندنا بالبيانات دي. لو الكود مكتوب صح على الكارنيه، يبقى الكارنيه ده مش طالع من عندنا (أو اتلغى).</p>';
+  }
+  box.innerHTML = html;
+  box.querySelectorAll('.qc-vr').forEach((el) => placeScaled(el.querySelector('.qc-sbox'), frontHTML(byId(el.dataset.id)), 0.62));
 }
 
 /* ── الطباعة ───────────────────────────── */
@@ -813,6 +1173,7 @@ function wire() {
     else if (t.id === 'qcNo') { draft.no = latin(t.value).toUpperCase(); noTouched = true; live(); }
     else if (t.id === 'qcExp') { draft.exp = t.value; live(); }
     else if (t.id === 'qcSearch') renderList();
+    else if (t.id === 'qcVer') { verQ = t.value; renderVer(); }
     else if (/^qcS/.test(t.id)) {
       S.company = document.getElementById('qcSCo').value.trim();
       S.tagline = document.getElementById('qcSTag').value.trim();
@@ -858,6 +1219,14 @@ function wire() {
       r.readAsDataURL(f);
     }
     if (t.id === 'qcRestore') { const f = t.files && t.files[0]; t.value = ''; if (f) restore(f); }
+    if (t.id === 'qcXls') { const f = t.files && t.files[0]; t.value = ''; if (f) importXls(f); }
+    if (t.id === 'qcPics') {
+      const res = addPics(t.files); t.value = '';
+      let msg = 'اتختار ' + arN(res.ok) + ' صورة';
+      if (res.bad.length) msg += '، و' + arN(res.bad.length) + ' اسمها مش رقم قومي (' + res.bad.slice(0, 3).join('، ') + (res.bad.length > 3 ? '…' : '') + ')';
+      toast(msg);
+      if (imp) impPhoto().then(render); else render();
+    }
     if (t.type === 'checkbox' && t.closest('.qc-th')) {
       const art = t.closest('.qc-th');
       if (t.checked) selected.add(art.dataset.id); else selected.delete(art.dataset.id);
@@ -929,7 +1298,7 @@ function wire() {
     }
     const ac = e.target.closest('[data-qcact]');
     if (ac) {
-      const id = ac.closest('.qc-th').dataset.id;
+      const id = ac.closest('.qc-th, .qc-vr').dataset.id;
       if (ac.dataset.qcact === 'edit') editCard(id);
       if (ac.dataset.qcact === 'del') delCard(id);
       return;
@@ -944,7 +1313,19 @@ function wire() {
       nd.dataset.force = '1'; nd.hidden = false;
       document.getElementById('qcDeptName').focus();
     }
-    if (act === 'clear') { startNew(); render(); }
+    if (act === 'clear') { if (imp) loadImp(); else { startNew(); render(); } }
+    if (act === 'newcode') {
+      if (editingId && !confirm('تدّي الكارنيه ده كود تصريح جديد؟\nالكود القديم (' + draft.code + ') مش هيبقى صالح، ولازم تطبع الكارنيه تاني بعد الحفظ.')) return;
+      draft.code = genCode();
+      document.getElementById('qcCode').value = draft.code;
+      live();
+    }
+    if (act === 'impxls') document.getElementById('qcXls').click();
+    if (act === 'imppics') document.getElementById('qcPics').click();
+    if (act === 'impskip') skipImp();
+    if (act === 'impall') saveAllImp();
+    if (act === 'impstop') stopImp();
+    if (act === 'repok') { impReport = null; render(); }
     if (act === 'jobadd') {
       const j = (document.getElementById('qcJob').value || '').trim();
       if (!j) { toast('اكتب الوظيفة الأول وبعدين احفظها في القائمة.'); document.getElementById('qcJob').focus(); return; }

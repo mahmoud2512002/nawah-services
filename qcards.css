@@ -74,6 +74,51 @@ details.qc-set textarea{ min-height:120px; }
 .qc-newdept input:focus{ outline:none; border-color:var(--navy); }
 .qc-newdept .fine{ margin:8px 0 0; }
 
+/* كود التصريح */
+.qc-frows.tight .r{ height:3.85mm; }
+.qc-b .qc-code{ font-weight:700; letter-spacing:.25mm; color:var(--c2); }
+.qc-codein{ font-weight:700; letter-spacing:1px; background:var(--surface-2); }
+
+/* التحقق من كارنيه */
+.qc-ver{ margin:0 0 16px; padding:12px 14px; border:1.5px solid var(--navy); border-radius:12px; background:var(--surface); }
+.qc-ver > label{ display:block; font-size:12.5px; color:var(--muted); margin-bottom:8px; }
+.qc-ver > label b{ color:var(--navy); font-size:14px; }
+.qc-ver input{ width:100%; box-sizing:border-box; border:1.5px solid var(--line); border-radius:var(--r-sm); padding:11px 12px; font:inherit; font-size:15px; background:var(--surface); }
+.qc-ver input:focus{ outline:none; border-color:var(--navy); }
+.qc-vok, .qc-vno, .qc-vmaybe{ margin:10px 0 6px; font-size:13.5px; font-weight:600; padding:8px 10px; border-radius:9px; }
+.qc-vok{ color:#0A5436; background:#DDF4E9; }
+.qc-vno{ color:#761628; background:#FBE4E8; }
+.qc-vmaybe{ color:#8A5300; background:#FFF2D3; }
+.qc-vr{ display:flex; gap:14px; align-items:flex-start; padding:10px; margin-top:8px; border:1px solid var(--line); border-radius:12px; flex-wrap:wrap; }
+.qc-vr.sure{ border-color:#16895C; box-shadow:0 0 0 1px #16895C inset; }
+.qc-vd{ flex:1; min-width:200px; }
+.qc-vd dl{ margin:0 0 8px; display:grid; gap:4px; font-size:13px; }
+.qc-vd dl div{ display:flex; justify-content:space-between; gap:10px; border-bottom:1px dashed var(--line); padding-bottom:3px; }
+.qc-vd dt{ color:var(--muted); }
+.qc-vd dd{ margin:0; font-weight:600; text-align:left; }
+.qc-vd dd .ltr{ direction:ltr; unicode-bidi:isolate; }
+.qc-vd .no{ color:var(--urgent); }
+
+/* استيراد من الإكسل */
+.qc-imp{ margin:0 0 16px; border:1.5px solid var(--line); border-radius:12px; padding:10px 14px; background:var(--surface-2); }
+.qc-imp > summary{ cursor:pointer; font-weight:600; font-size:14px; color:var(--navy); }
+.qc-imp.on{ border-color:var(--navy); background:var(--sky-soft); }
+.qc-imph{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; align-items:baseline; }
+.qc-imph b{ font-size:14.5px; color:var(--navy); }
+.qc-imph span{ font-size:12.5px; color:var(--muted); }
+.qc-bar{ height:6px; border-radius:99px; background:var(--surface); margin:8px 0; overflow:hidden; }
+.qc-bar i{ display:block; height:100%; background:var(--navy); border-radius:99px; transition:width .25s; }
+.qc-st{ margin:4px 0; font-size:13px; font-weight:600; }
+.qc-st .ok{ color:#16895C; }
+.qc-st .no{ color:var(--urgent); }
+.qc-st .ltr{ direction:ltr; unicode-bidi:isolate; }
+.qc-steps{ margin:10px 0 6px; padding-inline-start:20px; font-size:13px; line-height:1.7; }
+.qc-steps .ltr{ direction:ltr; unicode-bidi:isolate; }
+.qc-imp .pp-bar{ margin-top:8px; }
+.qc-imprep{ margin-top:10px; padding:10px 12px; border-radius:10px; background:var(--surface); border:1px solid var(--line); font-size:13px; }
+.qc-imprep p{ margin:8px 0 2px; font-weight:600; }
+.qc-imprep ul{ margin:0 0 6px; padding-inline-start:20px; max-height:180px; overflow:auto; }
+
 /* قص الصورة */
 dialog.qc-dlg{ border:0; border-radius:18px; padding:0; max-width:94vw; background:var(--surface); color:var(--ink); font-family:var(--font-ui); }
 dialog.qc-dlg::backdrop{ background:rgba(17,24,70,.55); }
