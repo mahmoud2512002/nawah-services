@@ -98,8 +98,12 @@ function genCode() {
   }
 }
 /* الكارنيهات اللي اتعملت قبل الكود بتاخد كود مرة واحدة */
-if (cards.some((c) => c && !c.code)) {
-  cards.forEach((c) => { if (c && !c.code) c.code = genCode(); });
+if (cards.some((c) => c && (!c.code || 'exp' in c))) {
+  cards.forEach((c) => {
+    if (!c) return;
+    if (!c.code) c.code = genCode();
+    delete c.exp;                     // تاريخ نهاية التصريح اتشال من الكارنيه
+  });
   saveCards();
 }
 
@@ -299,7 +303,8 @@ function frontHTML(c, preview) {
   if (c.nid) rows.push(['الرقم القومي', `<span class="ltr">${esc(c.nid)}</span>`]);
   if (c.no) rows.push(['رقم الكارنيه', `<span class="ltr">${esc(c.no)}</span>`]);
   if (c.sec) rows.push(['القسم', esc(c.sec), 1]);
-  if (c.exp) rows.push(['صالح حتى', `<span class="ltr">${esc(fmtD(c.exp))}</span>`]);
+  if (c.phone) rows.push(['الموبايل', `<span class="ltr">${esc(c.phone)}</span>`]);
+  if (c.note) rows.push(['ملاحظات', esc(c.note), 1]);
   const name = c.name ? esc(c.name) : (preview ? '<span class="ph-t">الاسم</span>' : '');
   const job = c.job ? esc(c.job) : (preview ? '<span class="ph-t">الوظيفة</span>' : '');
   const photo = c.photo ? `<img src="${c.photo}" alt="">` : `<div class="ph">${SIL}</div>`;
@@ -311,7 +316,7 @@ function frontHTML(c, preview) {
     <div class="qc-fph">${photo}</div>
     <div class="qc-fname" data-fit>${name}</div>
     <div class="qc-fjob" data-fit>${job}</div>
-    <div class="qc-frows${rows.length > 4 ? ' tight' : ''}">${rows.map((r) => `<div class="r"><span>${r[0]}</span><b${r[2] ? ' data-fit' : ''}>${r[1]}</b></div>`).join('')}</div>
+    <div class="qc-frows${rows.length > 4 ? ' n' + Math.min(rows.length, 7) : ''}">${rows.map((r) => `<div class="r"><span>${r[0]}</span><b${r[2] ? ' data-fit' : ''}>${r[1]}</b></div>`).join('')}</div>
     <div class="qc-ffoot" data-fit>${esc(S.frontFoot)}</div>
   </div>`;
 }
@@ -372,7 +377,7 @@ function needAssets() {
 
 /* ── الحالة ─────────────────────────────── */
 function blank(dept) {
-  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', jobAuto: S.jobAuto, sec: '', secAuto: S.secAuto, nid: '', no: '', code: genCode(), exp: '', photo: '', tech: '' };
+  return { name: '', dept: dept || (depts()[0] || {}).id || 'other', job: '', jobAuto: S.jobAuto, sec: '', secAuto: S.secAuto, nid: '', no: '', code: genCode(), phone: '', note: '', photo: '', tech: '' };
 }
 function startNew(keepDept) {
   editingId = null; noTouched = false; photoSrc = '';
@@ -458,8 +463,11 @@ function render() {
           <button class="btn btn-quiet" type="button" data-qc="newcode" title="لو الكارنيه ضاع: كود جديد والقديم يبطل">كود جديد</button>
         </div>
       </div>
-      <label class="fld"><span>صالح حتى (اختياري)</span>
-        <input id="qcExp" type="date" value="${esc(draft.exp)}">
+      <label class="fld"><span>رقم الموبايل (اختياري)</span>
+        <input id="qcPhone" class="ltr" dir="ltr" inputmode="tel" maxlength="15" value="${esc(draft.phone)}" autocomplete="off" placeholder="01xxxxxxxxx">
+      </label>
+      <label class="fld wide"><span>ملاحظات على وش الكارنيه (اختياري، وخليها قصيرة)</span>
+        <input id="qcNote" maxlength="45" value="${esc(draft.note)}" autocomplete="off" placeholder="مثلاً: وردية ليل — بوابة ٣">
       </label>
       <label class="fld"><span>ربط بفني (اختياري)</span>
         <select id="qcTech">
@@ -555,7 +563,7 @@ function renderList() {
   const g = document.getElementById('qcGrid');
   if (!g) return;
   const q = latin((document.getElementById('qcSearch') || {}).value || '').trim().toLowerCase();
-  const list = cards.filter((c) => !q || [c.name, c.job, c.nid, c.no, c.code, normCode(c.code), deptName(c.dept)].join(' ').toLowerCase().indexOf(q) >= 0);
+  const list = cards.filter((c) => !q || [c.name, c.job, c.nid, c.no, c.code, normCode(c.code), c.phone, c.note, deptName(c.dept)].join(' ').toLowerCase().indexOf(q) >= 0);
   if (!cards.length) g.innerHTML = '<div class="qc-none">لسه مفيش كارنيهات. اكتب بيانات أول فني واضغط «حفظ الكارنيه».</div>';
   else if (!list.length) g.innerHTML = '<div class="qc-none">مفيش كارنيه بالاسم أو الرقم ده.</div>';
   else {
@@ -616,7 +624,8 @@ function cardFrom(d) {
     nid: latin(d.nid).replace(/\D/g, ''),
     no: latin(d.no).trim().toUpperCase(),
     code: d.code || genCode(),
-    exp: d.exp,
+    phone: latin(d.phone).replace(/[^\d+]/g, ''),
+    note: String(d.note || '').trim().replace(/\s+/g, ' '),
     photo: d.photo,
     tech: d.tech
   };
@@ -670,7 +679,7 @@ function saveCard() {
 function editCard(id) {
   const c = byId(id); if (!c) return;
   editingId = id; noTouched = true; photoSrc = '';
-  draft = { name: c.name || '', dept: c.dept, job: c.job || '', jobAuto: !!c.jobAuto, sec: c.sec || '', secAuto: c.secAuto !== false, nid: c.nid || '', no: c.no || '', code: c.code || genCode(), exp: c.exp || '', photo: c.photo || '', tech: c.tech || '' };
+  draft = { name: c.name || '', dept: c.dept, job: c.job || '', jobAuto: !!c.jobAuto, sec: c.sec || '', secAuto: c.secAuto !== false, nid: c.nid || '', no: c.no || '', code: c.code || genCode(), phone: c.phone || '', note: c.note || '', photo: c.photo || '', tech: c.tech || '' };
   syncJob();          // الكارنيهات القديمة اللي من غير قسم بتاخد قسمها التلقائي
   render();
   window.scrollTo(0, 0);
@@ -823,6 +832,8 @@ function findCols(rows) {
       const t = normD(cellText(x));
       if (!t) return;
       if (/القومي/.test(t)) col.nid = i;
+      else if (/موبايل|محمول|تليفون|هاتف|جوال/.test(t)) col.phone = i;
+      else if (/ملاحظ/.test(t)) col.note = i;
       else if (/(^| )لو /.test(t) && /اخري/.test(t)) col.other = i;
       else if (/الوظيف/.test(t)) { if (col.job == null) col.job = i; }
       else if (/القسم/.test(t)) col.sec = i;
@@ -864,7 +875,9 @@ async function importXls(file) {
     const name = g(R, 'name').replace(/\s+/g, ' ');
     const nid = latin(g(R, 'nid')).replace(/\D/g, '');
     if (!name && !nid) continue;                               // صف فاضي (فيه رقم «م» بس)
-    list.push({ name, nid, dept: roleFor(g(R, 'job'), g(R, 'other')), sec: g(R, 'sec'), row: r + 1 });
+    let phone = latin(g(R, 'phone')).replace(/[^\d+]/g, '');
+    if (/^1\d{9}$/.test(phone)) phone = '0' + phone;            // الإكسل بيشيل الصفر لو الرقم اتكتب كرقم
+    list.push({ name, nid, dept: roleFor(g(R, 'job'), g(R, 'other')), sec: g(R, 'sec'), phone, note: g(R, 'note').replace(/\s+/g, ' ').slice(0, 45), row: r + 1 });
   }
   if (!list.length) { toast('الإكسل مفيهوش أسماء لسه.'); return; }
   impReport = null;
@@ -877,7 +890,7 @@ const rowLabel = (r) => 'صف ' + arN(r.row) + (r.name ? ' — ' + r.name : '');
 /* مسودة كارنيه من صف الإكسل */
 function rowDraft(r) {
   const d = blank(r.dept);
-  d.name = r.name; d.nid = r.nid;
+  d.name = r.name; d.nid = r.nid; d.phone = r.phone || ''; d.note = r.note || '';
   d.jobAuto = true; d.job = autoJob(r.dept);
   if (r.sec) { d.secAuto = false; d.sec = r.sec; } else { d.secAuto = true; d.sec = autoSec(r.dept); }
   d.no = nextNo(r.dept);
@@ -1026,8 +1039,6 @@ function verHTML() {
     </div>`;
 }
 function verRow(c, sure) {
-  const today = dayD(Date.now());
-  const ex = c.exp ? (c.exp < today ? '<b class="no">منتهي من ' + esc(fmtD(c.exp)) + '</b>' : 'صالح حتى ' + esc(fmtD(c.exp))) : 'من غير تاريخ انتهاء';
   const rows = [
     ['كود التصريح', '<span class="ltr">' + esc(c.code || '—') + '</span>'],
     ['الاسم', esc(c.name)],
@@ -1035,7 +1046,8 @@ function verRow(c, sure) {
     ['القسم', esc(c.sec || '—')],
     ['الرقم القومي', '<span class="ltr">' + esc(c.nid || '—') + '</span>'],
     ['رقم الكارنيه', '<span class="ltr">' + esc(c.no || '—') + '</span>'],
-    ['الصلاحية', ex],
+    ['الموبايل', '<span class="ltr">' + esc(c.phone || '—') + '</span>'],
+    ['ملاحظات', esc(c.note || '—')],
     ['اتعمل يوم', '<span class="ltr">' + esc(fmtD(dayD(c.created))) + '</span>']
   ];
   return `<article class="qc-vr${sure ? ' sure' : ''}" data-id="${esc(c.id)}">
@@ -1165,13 +1177,18 @@ function wire() {
     if (t.id === 'qcName') { draft.name = t.value; live(); }
     else if (t.id === 'qcJob') { draft.job = t.value; live(); }
     else if (t.id === 'qcSec') { draft.sec = t.value; live(); }
+    else if (t.id === 'qcPhone') {
+      const v = latin(t.value).replace(/[^\d+]/g, '');
+      if (v !== t.value) t.value = v;
+      draft.phone = v; live();
+    }
+    else if (t.id === 'qcNote') { draft.note = t.value; live(); }
     else if (t.id === 'qcNid') {
       const v = latin(t.value).replace(/\D/g, '').slice(0, 14);
       if (v !== t.value) t.value = v;
       draft.nid = v; live();
     }
     else if (t.id === 'qcNo') { draft.no = latin(t.value).toUpperCase(); noTouched = true; live(); }
-    else if (t.id === 'qcExp') { draft.exp = t.value; live(); }
     else if (t.id === 'qcSearch') renderList();
     else if (t.id === 'qcVer') { verQ = t.value; renderVer(); }
     else if (/^qcS/.test(t.id)) {
@@ -1189,7 +1206,6 @@ function wire() {
 
   box.addEventListener('change', (e) => {
     const t = e.target;
-    if (t.id === 'qcExp') { draft.exp = t.value; live(); }
     if (t.id === 'qcTech') {
       draft.tech = t.value;
       document.getElementById('qcTechHint').hidden = !draft.tech;

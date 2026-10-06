@@ -75,7 +75,15 @@ details.qc-set textarea{ min-height:120px; }
 .qc-newdept .fine{ margin:8px 0 0; }
 
 /* كود التصريح */
-.qc-frows.tight .r{ height:3.85mm; }
+/* السطور بتصغر لما تكتر (كود، قومي، رقم، قسم، موبايل، صلاحية، ملاحظات) */
+.qc-frows.n5 .r{ height:3.85mm; }
+.qc-frows.n6 .r{ height:3.4mm; }
+.qc-frows.n6 .r > span{ font-size:2.15mm; }
+.qc-frows.n6 .r > b{ font-size:2.5mm; }
+.qc-frows.n7{ padding-top:1mm; }
+.qc-frows.n7 .r{ height:3mm; }
+.qc-frows.n7 .r > span{ font-size:2mm; }
+.qc-frows.n7 .r > b{ font-size:2.3mm; }
 .qc-b .qc-code{ font-weight:700; letter-spacing:.25mm; color:var(--c2); }
 .qc-codein{ font-weight:700; letter-spacing:1px; background:var(--surface-2); }
 
